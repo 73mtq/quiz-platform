@@ -1,0 +1,11 @@
+{
+  "name": "quiz-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "check": "node --check backend/src/server.js",
+    "migrate:quiz-maker": "node backend/src/scripts/migrate-from-quiz-maker.js"
+  }
+}

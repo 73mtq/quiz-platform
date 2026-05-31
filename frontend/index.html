@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quiz Platform</title>
+  <link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Quiz Platform</p>
+        <h1>课程题库与随机刷题平台</h1>
+        <p>支持课程分组、文本导入、AI 图片识别、本地文件保存和随机不重复刷题。</p>
+      </div>
+      <div class="metric">
+        <strong id="questionCount">0</strong>
+        <span>当前课程题数</span>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <select id="courseSelect"></select>
+      <input id="courseName" placeholder="新课程名称">
+      <button id="addCourseBtn">新增课程</button>
+      <button id="deleteCourseBtn" class="ghost">删除课程</button>
+    </section>
+
+    <nav class="tabs">
+      <button class="active" data-tab="importPanel">导入</button>
+      <button data-tab="practicePanel">刷题</button>
+      <button data-tab="bankPanel">题库</button>
+    </nav>
+
+    <section id="importPanel" class="panel active">
+      <h2>导入题目</h2>
+      <textarea id="sourceText" placeholder="1. 题干&#10;A. 选项&#10;B. 选项&#10;答案：A&#10;解析：可选"></textarea>
+      <div class="actions">
+        <button id="sampleBtn">示例</button>
+        <button id="importTextBtn">文本导入</button>
+        <input id="imageInput" type="file" accept="image/*">
+        <button id="aiBtn">AI 识别图片</button>
+      </div>
+      <p id="status" class="status"></p>
+      <div id="importResult" class="import-result"></div>
+    </section>
+
+    <section id="practicePanel" class="panel">
+      <div class="practice-head">
+        <h2>随机刷题</h2>
+        <button id="resetRoundBtn" class="ghost">重置本轮</button>
+      </div>
+      <p id="roundInfo"></p>
+      <div id="accuracy" class="accuracy"></div>
+      <div class="feedback-settings">
+        <label><input id="showAnswerToggle" type="checkbox" checked> 答后显示正确答案</label>
+        <label><input id="showExplanationToggle" type="checkbox" checked> 答后显示解析</label>
+      </div>
+      <article id="quizCard" class="quiz-card"></article>
+      <div class="actions">
+        <button id="submitBtn">提交答案</button>
+        <button id="nextBtn">下一题</button>
+      </div>
+    </section>
+
+    <section id="bankPanel" class="panel">
+      <h2>题库管理</h2>
+      <div id="bankToolbar" class="bank-toolbar"></div>
+      <div id="bankList" class="bank-list"></div>
+    </section>
+  </main>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

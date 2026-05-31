@@ -1,0 +1,527 @@
+:root {
+  --ink: #15120f;
+  --muted: #6f655b;
+  --paper: #fff9ef;
+  --card: #fffdf8;
+  --line: #eadcc8;
+  --accent: #b34b18;
+  --danger: #9f2632;
+  --mint: #d9efe1;
+  --shadow: 0 24px 70px rgba(62, 39, 20, 0.14);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(245, 205, 116, 0.4), transparent 24rem),
+    radial-gradient(circle at 86% 16%, rgba(186, 222, 201, 0.7), transparent 24rem),
+    linear-gradient(135deg, #fff1d7, #edf3e7);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 14px;
+  padding: 11px 16px;
+  color: #fff;
+  font-weight: 800;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+button.ghost {
+  color: var(--accent);
+  border: 1px solid var(--line);
+  background: transparent;
+}
+
+.app {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 32px 0 48px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 24px;
+  align-items: stretch;
+  margin-bottom: 18px;
+}
+
+.hero h1 {
+  margin: 8px 0;
+  font-size: clamp(34px, 6vw, 62px);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.hero p {
+  color: var(--muted);
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.metric,
+.panel,
+.toolbar {
+  border: 1px solid rgba(125, 47, 18, 0.16);
+  border-radius: 28px;
+  background: rgba(255, 253, 248, 0.86);
+  box-shadow: var(--shadow);
+}
+
+.metric {
+  display: grid;
+  place-items: center;
+  padding: 28px;
+}
+
+.metric strong {
+  color: var(--accent);
+  font-size: 70px;
+  line-height: 1;
+}
+
+.toolbar {
+  display: grid;
+  grid-template-columns: 280px 1fr auto auto;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.toolbar input,
+.toolbar select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  background: var(--paper);
+}
+
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.tabs button {
+  color: var(--muted);
+  border: 1px solid var(--line);
+  background: rgba(255, 253, 248, 0.72);
+}
+
+.tabs button.active {
+  color: #fff;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.panel {
+  display: none;
+  padding: 22px;
+}
+
+.panel.active {
+  display: block;
+}
+
+textarea {
+  min-height: 280px;
+  resize: vertical;
+  line-height: 1.7;
+}
+
+.actions,
+.practice-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.status,
+.empty {
+  color: var(--muted);
+}
+
+.import-result {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.import-summary {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+  background: var(--paper);
+}
+
+.import-summary strong {
+  color: var(--accent);
+}
+
+.import-preview {
+  display: grid;
+  gap: 8px;
+}
+
+.import-preview > h3 {
+  margin: 8px 0 0;
+}
+
+.import-preview article {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  background: var(--card);
+}
+
+.import-preview article h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.import-preview p {
+  margin: 4px 0;
+  color: var(--muted);
+}
+
+.rejected-list article {
+  border-color: rgba(159, 38, 50, 0.25);
+  background: #fff0ed;
+}
+
+.accuracy {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.accuracy div,
+.quiz-card,
+.bank-item {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 16px;
+  background: var(--paper);
+}
+
+.accuracy strong {
+  display: block;
+  color: var(--accent);
+  font-size: 28px;
+}
+
+.accuracy span {
+  color: var(--muted);
+}
+
+.feedback-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 10px 0 14px;
+  color: var(--muted);
+}
+
+.feedback-settings label {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.option {
+  display: flex;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.option.is-correct {
+  border-color: #5e9d6b;
+  background: #e4f5e8;
+}
+
+.option.is-wrong {
+  border-color: #d4745c;
+  background: #ffe2d9;
+}
+
+.option input:disabled {
+  cursor: not-allowed;
+}
+
+.multi-hint {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(179, 75, 24, 0.1);
+}
+
+.correct,
+.wrong {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  line-height: 1.7;
+}
+
+.correct {
+  background: var(--mint);
+}
+
+.wrong {
+  background: #ffe1d5;
+}
+
+.bank-list {
+  display: grid;
+  gap: 12px;
+}
+
+.bank-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.bank-options {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+}
+
+.bank-options p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.bank-item button {
+  align-self: flex-start;
+  color: var(--danger);
+  border: 1px solid rgba(159, 38, 50, 0.22);
+  background: #ffe8e8;
+}
+
+.bank-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.bank-toolbar input {
+  flex: 1;
+  min-width: 200px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 10px 14px;
+  background: var(--paper);
+}
+
+.bank-count {
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.bank-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: flex-start;
+}
+
+.bank-form {
+  border-color: var(--accent);
+  background: #fff8f0;
+}
+
+.form-body {
+  flex: 1;
+}
+
+.form-body label {
+  display: block;
+  margin: 12px 0 4px;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.form-body label:first-child {
+  margin-top: 0;
+}
+
+.form-stem,
+.form-explanation {
+  min-height: 60px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--card);
+  resize: vertical;
+}
+
+.form-options {
+  display: grid;
+  gap: 8px;
+}
+
+.form-option-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.form-option-key {
+  width: 48px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--card);
+}
+
+.form-option-text {
+  flex: 1;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--card);
+}
+
+.form-remove-option {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.form-add-option {
+  padding: 6px 12px;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.form-answers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.form-answer-check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* 填空题样式 */
+.fill-blank-area {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.fill-blank-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-bottom: 2px solid var(--accent);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 16px;
+  background: var(--card);
+  transition: border-color 0.2s;
+}
+
+.fill-blank-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(179, 75, 24, 0.1);
+}
+
+.fill-blank-input:disabled {
+  background: #f5f0e8;
+  cursor: not-allowed;
+}
+
+.tag-fill-blank {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #6b7280;
+  vertical-align: middle;
+}
+
+.form-type {
+  width: 160px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: var(--card);
+}
+
+.form-fill-blank-answer {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: var(--card);
+}
+
+@media (max-width: 760px) {
+  .app {
+    width: min(100% - 20px, 1120px);
+  }
+
+  .hero,
+  .toolbar,
+  .accuracy {
+    grid-template-columns: 1fr;
+  }
+}

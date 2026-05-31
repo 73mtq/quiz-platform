@@ -1,0 +1,21 @@
+{
+  "activeCourseId": "course-1779669099649-wdh4uu1k13",
+  "courses": [
+    {
+      "id": "course-1779669099649-wdh4uu1k13",
+      "name": "默认课程",
+      "questions": [],
+      "practice": {
+        "roundNo": 1,
+        "remainingIds": [],
+        "answeredInRound": 0,
+        "correctInRound": 0,
+        "totalAnswered": 0,
+        "totalCorrect": 0,
+        "currentQuestionId": null,
+        "lastAnswer": null
+      },
+      "createdAt": "2026-05-25T00:31:39.649Z"
+    }
+  ]
+}
