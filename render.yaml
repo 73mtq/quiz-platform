@@ -4,24 +4,3 @@ services:
     runtime: node
     buildCommand: npm install
     startCommand: npm start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      # DATABASE_URL 会自动从绑定的数据库注入
-      # 如果使用 Supabase 等外部数据库，手动在 Render 控制台设置
-      - key: DATABASE_URL
-        fromDatabase:
-          name: quiz-db
-          property: connectionString
-      # 以下环境变量需要在 Render 控制台手动设置
-      - key: MIMO_API_KEY
-        sync: false
-      - key: MIMO_BASE_URL
-        sync: false
-      - key: MIMO_MODEL
-        sync: false
-
-databases:
-  - name: quiz-db
-    plan: free
-    # 免费数据库 90 天不活跃会过期
