@@ -1,50 +1,56 @@
 /* ============================================
-   东方学术 — 温润纸感 × 现代交互
+   Digital Scholar — 现代学术工具美学
+   DIALS: VARIANCE=5, MOTION=4, DENSITY=5
+   定位：学习工具，非营销页。聚焦可读性与舒适操作。
    ============================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
-
+/* 字体：系统字体优先，Noto Serif SC 仅用于标题装饰 */
 :root {
-  /* 色彩系统 */
-  --ink: #2c1810;
-  --ink-soft: #5a4234;
-  --muted: #8b7355;
-  --paper: #faf6f0;
-  --paper-warm: #f5ede0;
-  --card: #fffcf7;
-  --card-hover: #fff9f0;
-  --line: #e8ddd0;
-  --line-light: #f0e8db;
-  --accent: #c05529;
-  --accent-hover: #a84820;
-  --accent-soft: rgba(192, 85, 41, 0.08);
-  --accent-glow: rgba(192, 85, 41, 0.15);
-  --danger: #b42b3a;
-  --danger-soft: #fde8e6;
-  --success: #3d7a4a;
-  --success-soft: #e4f2e7;
-  --gold: #d4a853;
-  --gold-soft: rgba(212, 168, 83, 0.12);
+  /* 色彩系统 — 深棕+琥珀，避开通用暖米色 */
+  --ink: #1f1611;
+  --ink-soft: #3d2e22;
+  --muted: #7a6a58;
+  --paper: #f8f4ee;
+  --paper-warm: #f2ebe0;
+  --card: #fdfbf7;
+  --card-hover: #faf7f0;
+  --line: #e2d8c8;
+  --line-light: #ece4d6;
+  --accent: #b85c2a;
+  --accent-hover: #9e4e22;
+  --accent-soft: rgba(184, 92, 42, 0.07);
+  --accent-glow: rgba(184, 92, 42, 0.12);
+  --danger: #a63240;
+  --danger-soft: #fce8e6;
+  --success: #3a7548;
+  --success-soft: #e2f0e6;
+  --gold: #c49a3c;
+  --gold-soft: rgba(196, 154, 60, 0.10);
 
-  /* 阴影 */
-  --shadow-sm: 0 1px 3px rgba(44, 24, 16, 0.04), 0 1px 2px rgba(44, 24, 16, 0.06);
-  --shadow-md: 0 4px 16px rgba(44, 24, 16, 0.06), 0 2px 4px rgba(44, 24, 16, 0.04);
-  --shadow-lg: 0 12px 40px rgba(44, 24, 16, 0.08), 0 4px 12px rgba(44, 24, 16, 0.04);
-  --shadow-xl: 0 24px 60px rgba(44, 24, 16, 0.1), 0 8px 20px rgba(44, 24, 16, 0.05);
+  /* 阴影 — 暖色调，非纯黑 */
+  --shadow-xs: 0 1px 2px rgba(31, 22, 17, 0.04);
+  --shadow-sm: 0 1px 3px rgba(31, 22, 17, 0.05), 0 1px 2px rgba(31, 22, 17, 0.04);
+  --shadow-md: 0 4px 12px rgba(31, 22, 17, 0.06), 0 2px 4px rgba(31, 22, 17, 0.03);
+  --shadow-lg: 0 8px 30px rgba(31, 22, 17, 0.08), 0 4px 10px rgba(31, 22, 17, 0.03);
+  --shadow-xl: 0 20px 50px rgba(31, 22, 17, 0.10), 0 8px 16px rgba(31, 22, 17, 0.04);
 
-  /* 圆角 */
-  --r-sm: 8px;
-  --r-md: 14px;
-  --r-lg: 20px;
-  --r-xl: 28px;
+  /* 圆角 — 统一系统：交互元素 10px，容器 18px，大容器 24px */
+  --r-xs: 6px;
+  --r-sm: 10px;
+  --r-md: 18px;
+  --r-lg: 24px;
 
   /* 字体 */
-  --font-display: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
-  --font-body: 'DM Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-display: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+  --font-body: -apple-system, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
 
   /* 过渡 */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
 }
 
 /* ---- 基础重置 ---- */
@@ -60,19 +66,20 @@ body {
   line-height: 1.6;
   background: var(--paper);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
   overflow-x: hidden;
 }
 
-/* 背景装饰 */
+/* 背景 — 微妙的径向光晕，非纹理 */
 body::before {
   content: '';
   position: fixed;
-  top: -40%;
-  right: -20%;
-  width: 80vw;
-  height: 80vw;
-  background: radial-gradient(circle, rgba(212, 168, 83, 0.08) 0%, transparent 70%);
+  top: -20%;
+  right: -10%;
+  width: 60vw;
+  height: 60vw;
+  background: radial-gradient(circle, rgba(196, 154, 60, 0.06) 0%, transparent 65%);
   pointer-events: none;
   z-index: 0;
 }
@@ -80,21 +87,11 @@ body::before {
 body::after {
   content: '';
   position: fixed;
-  bottom: -30%;
-  left: -15%;
-  width: 70vw;
-  height: 70vw;
-  background: radial-gradient(circle, rgba(192, 85, 41, 0.05) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* 纸张纹理叠加 */
-.app::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23c05529' fill-opacity='0.015'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  bottom: -15%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(circle, rgba(184, 92, 42, 0.04) 0%, transparent 65%);
   pointer-events: none;
   z-index: 0;
 }
@@ -108,52 +105,53 @@ button, input, select, textarea {
 .app {
   position: relative;
   z-index: 1;
-  width: min(960px, calc(100% - 32px));
+  width: min(900px, calc(100% - 32px));
   margin: 0 auto;
-  padding: 40px 0 60px;
+  padding: 36px 0 48px;
 }
 
-/* ---- 头部 Hero ---- */
+/* ---- 头部 Hero — 紧凑，fit viewport ---- */
 .hero {
   display: grid;
-  grid-template-columns: 1fr 180px;
-  gap: 32px;
+  grid-template-columns: 1fr 160px;
+  gap: 24px;
   align-items: end;
-  margin-bottom: 28px;
-  padding-bottom: 28px;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
   border-bottom: 1px solid var(--line-light);
 }
 
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   color: var(--accent);
-  font-family: var(--font-body);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.25em;
+  font-weight: 600;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   opacity: 0;
-  animation: fadeSlideUp 0.6s var(--ease-out) 0.1s forwards;
+  animation: fadeSlideUp var(--duration-slow) var(--ease-out) 0.1s forwards;
 }
 
 .hero h1 {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   font-family: var(--font-display);
-  font-size: clamp(28px, 5vw, 42px);
+  font-size: clamp(26px, 4.5vw, 38px);
   font-weight: 900;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
   color: var(--ink);
   opacity: 0;
-  animation: fadeSlideUp 0.6s var(--ease-out) 0.2s forwards;
+  animation: fadeSlideUp var(--duration-slow) var(--ease-out) 0.2s forwards;
 }
 
 .hero > div:first-child p:last-child {
   color: var(--muted);
   font-size: 14px;
-  line-height: 1.7;
+  line-height: 1.6;
+  max-width: 45ch;
   opacity: 0;
-  animation: fadeSlideUp 0.6s var(--ease-out) 0.3s forwards;
+  animation: fadeSlideUp var(--duration-slow) var(--ease-out) 0.3s forwards;
 }
 
 .metric {
@@ -161,18 +159,18 @@ button, input, select, textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 24px 20px;
+  padding: 20px 16px;
   border: 1px solid var(--line);
-  border-radius: var(--r-xl);
+  border-radius: var(--r-md);
   background: var(--card);
   box-shadow: var(--shadow-md);
   opacity: 0;
-  animation: fadeScaleIn 0.5s var(--ease-spring) 0.4s forwards;
+  animation: fadeScaleIn 0.4s var(--ease-spring) 0.4s forwards;
 }
 
 .metric strong {
   font-family: var(--font-display);
-  font-size: 56px;
+  font-size: 48px;
   font-weight: 900;
   line-height: 1;
   color: var(--accent);
@@ -180,37 +178,37 @@ button, input, select, textarea {
 }
 
 .metric span {
-  margin-top: 6px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--muted);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 /* ---- 课程工具栏 ---- */
 .toolbar {
   display: grid;
-  grid-template-columns: 240px 1fr auto auto;
-  gap: 10px;
-  padding: 14px 16px;
-  margin-bottom: 20px;
+  grid-template-columns: 220px 1fr auto auto;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   background: var(--card);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
   opacity: 0;
-  animation: fadeSlideUp 0.5s var(--ease-out) 0.35s forwards;
+  animation: fadeSlideUp var(--duration-slow) var(--ease-out) 0.35s forwards;
 }
 
 .toolbar input,
 .toolbar select {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 10px 14px;
+  border-radius: var(--r-xs);
+  padding: 9px 12px;
   background: var(--paper);
   font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
 }
 
 .toolbar input:focus,
@@ -220,42 +218,34 @@ button, input, select, textarea {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* ---- 按钮系统 ---- */
+/* ---- 按钮系统 — 触觉反馈 ---- */
 button {
   border: 0;
-  border-radius: var(--r-sm);
-  padding: 10px 18px;
+  border-radius: var(--r-xs);
+  padding: 9px 16px;
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s var(--ease-out);
+  transition: all var(--duration-fast) var(--ease-out);
   position: relative;
   overflow: hidden;
-}
-
-button::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255,255,255,0.12) 0%, transparent 100%);
-  pointer-events: none;
 }
 
 button:not(.ghost) {
   color: #fff;
   background: var(--accent);
-  box-shadow: 0 2px 8px rgba(192, 85, 41, 0.25);
+  box-shadow: 0 2px 6px rgba(184, 92, 42, 0.2);
 }
 
 button:not(.ghost):hover {
   background: var(--accent-hover);
-  box-shadow: 0 4px 16px rgba(192, 85, 41, 0.3);
+  box-shadow: 0 3px 10px rgba(184, 92, 42, 0.25);
   transform: translateY(-1px);
 }
 
 button:not(.ghost):active {
-  transform: translateY(0);
-  box-shadow: 0 1px 4px rgba(192, 85, 41, 0.2);
+  transform: translateY(1px);
+  box-shadow: 0 1px 3px rgba(184, 92, 42, 0.15);
 }
 
 button.ghost {
@@ -265,88 +255,84 @@ button.ghost {
   box-shadow: none;
 }
 
-button.ghost::after { display: none; }
-
 button.ghost:hover {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-/* ---- 标签页导航 ---- */
+/* ---- 标签页导航 — pill 形状 ---- */
 .tabs {
   display: flex;
-  gap: 4px;
-  margin-bottom: 20px;
-  padding: 4px;
+  gap: 3px;
+  margin-bottom: 16px;
+  padding: 3px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: var(--paper-warm);
   opacity: 0;
-  animation: fadeSlideUp 0.5s var(--ease-out) 0.4s forwards;
+  animation: fadeSlideUp var(--duration-slow) var(--ease-out) 0.4s forwards;
 }
 
 .tabs button {
   flex: 1;
-  padding: 10px 16px;
-  border-radius: 10px;
+  padding: 9px 14px;
+  border-radius: 7px;
   font-size: 14px;
   font-weight: 600;
   color: var(--muted);
   background: transparent;
   box-shadow: none;
-  transition: all 0.25s var(--ease-out);
+  transition: all var(--duration-normal) var(--ease-out);
 }
-
-.tabs button::after { display: none; }
 
 .tabs button:hover {
   color: var(--ink);
-  background: rgba(255, 252, 247, 0.6);
+  background: rgba(255, 252, 247, 0.5);
 }
 
 .tabs button.active {
   color: #fff;
   background: var(--accent);
-  box-shadow: 0 2px 8px rgba(192, 85, 41, 0.2);
+  box-shadow: 0 2px 6px rgba(184, 92, 42, 0.18);
 }
 
 /* ---- 面板 ---- */
 .panel {
   display: none;
-  padding: 24px;
+  padding: 22px;
   border: 1px solid var(--line);
-  border-radius: var(--r-xl);
+  border-radius: var(--r-lg);
   background: var(--card);
   box-shadow: var(--shadow-md);
 }
 
 .panel.active {
   display: block;
-  animation: fadeIn 0.3s var(--ease-out);
+  animation: fadeIn var(--duration-normal) var(--ease-out);
 }
 
 .panel h2 {
   font-family: var(--font-display);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--line-light);
 }
 
 /* ---- 文本域 ---- */
 textarea {
   width: 100%;
-  min-height: 200px;
+  min-height: 180px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  padding: 14px 16px;
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
   background: var(--paper);
   font-size: 14px;
   line-height: 1.8;
   resize: vertical;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
 }
 
 textarea:focus {
@@ -357,44 +343,44 @@ textarea:focus {
 
 textarea::placeholder {
   color: var(--muted);
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 /* ---- 操作按钮组 ---- */
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  margin-top: 16px;
+  margin-top: 14px;
 }
 
 .status {
   color: var(--muted);
-  font-size: 14px;
-  margin-top: 8px;
+  font-size: 13px;
+  margin-top: 6px;
 }
 
 .empty {
   color: var(--muted);
   font-size: 14px;
   text-align: center;
-  padding: 32px 16px;
+  padding: 28px 16px;
 }
 
 /* ---- 导入结果 ---- */
 .import-result {
   display: grid;
-  gap: 12px;
-  margin-top: 16px;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 .import-summary {
-  padding: 16px;
+  padding: 14px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: var(--paper-warm);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.7;
 }
 
@@ -404,22 +390,22 @@ textarea::placeholder {
 
 .import-preview {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .import-preview > h3 {
-  margin: 8px 0 4px;
+  margin: 6px 0 2px;
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
 }
 
 .import-preview article {
-  padding: 14px;
+  padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: var(--paper);
-  transition: border-color 0.2s;
+  transition: border-color var(--duration-fast);
 }
 
 .import-preview article:hover {
@@ -427,19 +413,19 @@ textarea::placeholder {
 }
 
 .import-preview article h3 {
-  margin: 0 0 6px;
-  font-size: 14px;
+  margin: 0 0 4px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .import-preview p {
-  margin: 3px 0;
+  margin: 2px 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .rejected-list article {
-  border-color: rgba(180, 43, 58, 0.2);
+  border-color: rgba(166, 50, 64, 0.2);
   background: var(--danger-soft);
 }
 
@@ -447,7 +433,7 @@ textarea::placeholder {
 .practice-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
 }
@@ -455,50 +441,50 @@ textarea::placeholder {
 .accuracy {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
-  margin: 16px 0;
+  gap: 10px;
+  margin: 14px 0;
 }
 
 .accuracy div {
-  padding: 16px;
+  padding: 14px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: var(--paper);
 }
 
 .accuracy strong {
   display: block;
   font-family: var(--font-display);
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 900;
   color: var(--accent);
   letter-spacing: -0.02em;
 }
 
 .accuracy span {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
 }
 
 .feedback-settings {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  margin: 12px 0 16px;
+  gap: 14px;
+  margin: 10px 0 14px;
   font-size: 13px;
   color: var(--muted);
 }
 
 .feedback-settings label {
   display: inline-flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
   cursor: pointer;
 }
 
 .feedback-settings input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
+  width: 15px;
+  height: 15px;
   accent-color: var(--accent);
 }
 
@@ -506,12 +492,12 @@ textarea::placeholder {
 .practice-mode-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  margin: 12px 0;
-  padding: 12px 16px;
+  margin: 10px 0;
+  padding: 10px 14px;
   border: 1px solid var(--line-light);
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: var(--paper);
   font-size: 13px;
 }
@@ -523,7 +509,7 @@ textarea::placeholder {
 
 .practice-mode-option {
   display: inline-flex;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
   cursor: pointer;
 }
@@ -533,10 +519,10 @@ textarea::placeholder {
 }
 
 .practice-count-input {
-  width: 64px;
+  width: 60px;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 6px 10px;
+  border-radius: var(--r-xs);
+  padding: 5px 8px;
   text-align: center;
   background: var(--card);
   font-size: 14px;
@@ -552,41 +538,46 @@ textarea::placeholder {
   font-size: 13px;
 }
 
-/* ---- 答题卡片 ---- */
+/* ---- 答题卡片 — 核心交互区 ---- */
 .quiz-card {
-  padding: 24px;
+  padding: 22px;
   border: 1px solid var(--line);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   background: var(--paper);
-  min-height: 120px;
+  min-height: 100px;
+  transition: border-color var(--duration-normal);
 }
 
 .quiz-card h3 {
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.7;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
-/* ---- 选项 ---- */
+/* ---- 选项 — 悬浮滑入 + 触觉反馈 ---- */
 .option {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
-  margin: 10px 0;
-  padding: 14px 16px;
+  margin: 8px 0;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: var(--card);
   cursor: pointer;
-  transition: all 0.2s var(--ease-out);
+  transition: all var(--duration-fast) var(--ease-out);
 }
 
 .option:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
-  transform: translateX(4px);
+  transform: translateX(3px);
+}
+
+.option:active {
+  transform: translateX(1px) scale(0.995);
 }
 
 .option.is-correct {
@@ -622,10 +613,10 @@ textarea::placeholder {
 
 .multi-hint {
   display: inline-block;
-  margin-left: 8px;
-  padding: 2px 10px;
+  margin-left: 6px;
+  padding: 1px 8px;
   border-radius: 100px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--accent);
   background: var(--accent-soft);
@@ -634,10 +625,10 @@ textarea::placeholder {
 
 .wrong-count-tag {
   display: inline-block;
-  margin-left: 8px;
-  padding: 2px 10px;
+  margin-left: 6px;
+  padding: 1px 8px;
   border-radius: 100px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--danger);
   background: var(--danger-soft);
@@ -646,22 +637,22 @@ textarea::placeholder {
 
 .stats-tag {
   display: inline-block;
-  margin-left: 6px;
-  padding: 2px 10px;
+  margin-left: 5px;
+  padding: 1px 8px;
   border-radius: 100px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--muted);
-  background: rgba(139, 115, 85, 0.08);
+  background: rgba(122, 106, 88, 0.08);
   vertical-align: middle;
 }
 
 .tag-fill-blank {
   display: inline-block;
-  margin-left: 6px;
-  padding: 2px 10px;
+  margin-left: 5px;
+  padding: 1px 8px;
   border-radius: 100px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   color: #fff;
   background: var(--ink-soft);
@@ -669,19 +660,19 @@ textarea::placeholder {
   letter-spacing: 0.03em;
 }
 
-/* ---- 答题反馈 ---- */
+/* ---- 答题反馈 — 有目的的入场动画 ---- */
 .correct, .wrong {
-  margin-top: 16px;
-  padding: 14px 16px;
-  border-radius: var(--r-md);
-  font-size: 14px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
   line-height: 1.8;
-  animation: fadeSlideUp 0.3s var(--ease-out);
+  animation: fadeSlideUp var(--duration-normal) var(--ease-out);
 }
 
 .correct {
   background: var(--success-soft);
-  border: 1px solid rgba(61, 122, 74, 0.2);
+  border: 1px solid rgba(58, 117, 72, 0.18);
 }
 
 .correct strong {
@@ -690,7 +681,7 @@ textarea::placeholder {
 
 .wrong {
   background: var(--danger-soft);
-  border: 1px solid rgba(180, 43, 58, 0.15);
+  border: 1px solid rgba(166, 50, 64, 0.12);
 }
 
 .wrong strong {
@@ -701,19 +692,19 @@ textarea::placeholder {
 .fill-blank-area {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: 14px 0;
+  gap: 8px;
+  margin: 12px 0;
 }
 
 .fill-blank-input {
   width: 100%;
   border: 1px solid var(--line);
   border-bottom: 2px solid var(--accent);
-  border-radius: var(--r-sm);
-  padding: 12px 14px;
-  font-size: 15px;
+  border-radius: var(--r-xs);
+  padding: 10px 12px;
+  font-size: 14px;
   background: var(--card);
-  transition: all 0.2s;
+  transition: all var(--duration-fast);
 }
 
 .fill-blank-input:focus {
@@ -726,89 +717,89 @@ textarea::placeholder {
 .fill-blank-input:disabled {
   background: var(--paper-warm);
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.6;
 }
 
 .round-done {
   color: var(--accent);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
   text-align: center;
 }
 
 /* ---- 题库 ---- */
 .bank-list {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .bank-item {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
+  gap: 14px;
+  padding: 14px;
   border: 1px solid var(--line);
-  border-radius: var(--r-md);
+  border-radius: var(--r-sm);
   background: var(--paper);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
 }
 
 .bank-item:hover {
   border-color: var(--accent);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
 }
 
 .bank-options {
   display: grid;
-  gap: 4px;
-  margin: 8px 0;
+  gap: 3px;
+  margin: 6px 0;
 }
 
 .bank-options p {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
 }
 
 .bank-item h3 {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   line-height: 1.6;
 }
 
 .bank-item p {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
-  margin: 3px 0;
+  margin: 2px 0;
 }
 
 .bank-actions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
   flex-shrink: 0;
 }
 
 .bank-actions button {
-  padding: 6px 12px;
+  padding: 5px 10px;
   font-size: 12px;
 }
 
 .bank-toolbar {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .bank-toolbar input {
   flex: 1;
-  min-width: 180px;
+  min-width: 160px;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 10px 14px;
+  border-radius: var(--r-xs);
+  padding: 9px 12px;
   background: var(--paper);
   font-size: 14px;
 }
@@ -821,7 +812,7 @@ textarea::placeholder {
 
 .bank-count {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -835,7 +826,7 @@ textarea::placeholder {
 /* ---- 编辑表单 ---- */
 .bank-form {
   border-color: var(--accent) !important;
-  background: #fff8f2 !important;
+  background: #fff7f0 !important;
 }
 
 .form-body {
@@ -844,11 +835,11 @@ textarea::placeholder {
 
 .form-body label {
   display: block;
-  margin: 14px 0 6px;
-  font-size: 12px;
+  margin: 12px 0 5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--muted);
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -858,10 +849,10 @@ textarea::placeholder {
 
 .form-stem,
 .form-explanation {
-  min-height: 60px;
+  min-height: 55px;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 10px 12px;
+  border-radius: var(--r-xs);
+  padding: 9px 11px;
   background: var(--card);
   resize: vertical;
   font-size: 14px;
@@ -869,21 +860,21 @@ textarea::placeholder {
 
 .form-options {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .form-option-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 
 .form-option-key {
-  width: 44px;
+  width: 40px;
   text-align: center;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 8px;
+  border-radius: var(--r-xs);
+  padding: 7px;
   background: var(--card);
   font-weight: 700;
   font-size: 14px;
@@ -892,42 +883,40 @@ textarea::placeholder {
 .form-option-text {
   flex: 1;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 8px 12px;
+  border-radius: var(--r-xs);
+  padding: 7px 10px;
   background: var(--card);
   font-size: 14px;
 }
 
 .form-remove-option {
-  padding: 6px 10px;
+  padding: 5px 8px;
   font-size: 12px;
   color: var(--danger);
-  border: 1px solid rgba(180, 43, 58, 0.2);
+  border: 1px solid rgba(166, 50, 64, 0.18);
   background: transparent;
 }
-
-.form-remove-option::after { display: none; }
 
 .form-remove-option:hover {
   background: var(--danger-soft);
 }
 
 .form-add-option {
-  padding: 6px 12px;
+  padding: 5px 10px;
   font-size: 12px;
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
 .form-answers {
   display: flex;
   flex-wrap: wrap;
-  gap: 14px;
-  padding: 8px 0;
+  gap: 12px;
+  padding: 6px 0;
 }
 
 .form-answer-check {
   display: inline-flex;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
   cursor: pointer;
   font-size: 14px;
@@ -939,15 +928,15 @@ textarea::placeholder {
 
 .form-actions {
   display: flex;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .form-type {
-  width: 140px;
+  width: 130px;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 8px 12px;
+  border-radius: var(--r-xs);
+  padding: 7px 10px;
   background: var(--card);
   font-size: 14px;
 }
@@ -955,8 +944,8 @@ textarea::placeholder {
 .form-fill-blank-answer {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  padding: 10px 12px;
+  border-radius: var(--r-xs);
+  padding: 9px 11px;
   background: var(--card);
   font-size: 14px;
 }
@@ -970,7 +959,7 @@ textarea::placeholder {
 @keyframes fadeSlideUp {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -981,7 +970,7 @@ textarea::placeholder {
 @keyframes fadeScaleIn {
   from {
     opacity: 0;
-    transform: scale(0.92);
+    transform: scale(0.94);
   }
   to {
     opacity: 1;
@@ -989,9 +978,18 @@ textarea::placeholder {
   }
 }
 
-/* ---- 滚动条美化 ---- */
+/* ---- 减弱动效 — 尊重用户偏好 ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- 滚动条 ---- */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -1009,61 +1007,61 @@ textarea::placeholder {
 
 /* ---- 选中文本 ---- */
 ::selection {
-  background: rgba(192, 85, 41, 0.15);
+  background: rgba(184, 92, 42, 0.12);
   color: var(--ink);
 }
 
-/* ---- 移动端响应 ---- */
+/* ---- 移动端 — 明确声明，非假设 ---- */
 @media (max-width: 760px) {
   .app {
     width: calc(100% - 20px);
-    padding: 24px 0 40px;
+    padding: 20px 0 32px;
   }
 
   .hero {
     grid-template-columns: 1fr;
-    gap: 20px;
+    gap: 16px;
   }
 
   .metric {
     flex-direction: row;
-    gap: 16px;
-    padding: 16px 20px;
+    gap: 12px;
+    padding: 14px 16px;
   }
 
   .metric strong {
-    font-size: 40px;
+    font-size: 36px;
   }
 
   .toolbar {
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: 6px;
   }
 
   .tabs {
-    gap: 3px;
+    gap: 2px;
   }
 
   .tabs button {
-    padding: 10px 12px;
+    padding: 9px 10px;
     font-size: 13px;
   }
 
   .panel {
-    padding: 18px;
+    padding: 16px;
   }
 
   .quiz-card {
-    padding: 18px;
+    padding: 16px;
   }
 
   .option {
-    padding: 12px;
+    padding: 10px 12px;
   }
 
   .bank-item {
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   }
 
   .bank-actions {
@@ -1075,20 +1073,20 @@ textarea::placeholder {
   }
 
   .accuracy strong {
-    font-size: 28px;
+    font-size: 24px;
   }
 }
 
 @media (max-width: 480px) {
   .hero h1 {
-    font-size: 26px;
+    font-size: 22px;
   }
 
   .panel h2 {
-    font-size: 17px;
+    font-size: 16px;
   }
 
   .quiz-card h3 {
-    font-size: 15px;
+    font-size: 14px;
   }
 }
