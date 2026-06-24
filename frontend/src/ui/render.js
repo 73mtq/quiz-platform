@@ -23,6 +23,11 @@ export function renderApp() {
   renderBank(course);
 }
 
+/** 只更新题目区域（答题/切题时用，跳过侧边栏和题库重建） */
+export function updatePracticeOnly() {
+  renderPractice(activeCourse());
+}
+
 export function renderImportResult(importResult, source = "导入") {
   const accepted = importResult.accepted || [];
   const rejected = importResult.rejected || [];

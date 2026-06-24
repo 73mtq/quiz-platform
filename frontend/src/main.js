@@ -1,6 +1,6 @@
 import { api } from "./api/client.js";
 import { activeCourse, clearCurrentAnswer, currentQuestion, persistFeedbackSettings, runtime, settings } from "./state/appState.js";
-import { renderApp, renderImportResult } from "./ui/render.js";
+import { renderApp, renderImportResult, updatePracticeOnly } from "./ui/render.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
 
@@ -118,9 +118,26 @@ async function deleteCourse() {
 }
 
 async function nextQuestion() {
-  runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
+  // 乐观更新：本地立即切换题目
+  const course = activeCourse();
+  if (!course.practice.remainingIds.length) {
+    // 题目用完了，需要重新洗牌 —— 这种情况必须等服务端
+    runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
+    clearCurrentAnswer();
+    updatePracticeOnly();
+    return;
+  }
+
+  // 本地立即切换
+  course.practice.currentQuestionId = course.practice.remainingIds.shift();
+  course.practice.lastAnswer = null;
   clearCurrentAnswer();
-  renderApp();
+  updatePracticeOnly();
+
+  // 后台同步服务端
+  api.nextQuestion(runtime.practiceMode, runtime.practiceCount).then((state) => {
+    runtime.state = state;
+  }).catch(() => {});
 }
 
 async function submitAnswer() {
@@ -129,7 +146,6 @@ async function submitAnswer() {
 
   const isFillBlank = question.type === "fill-blank";
   if (isFillBlank) {
-    // 填空题：从输入框收集答案
     const inputs = document.querySelectorAll(".fill-blank-input");
     runtime.selectedAnswers = Array.from(inputs).map((el) => el.value.trim());
     if (runtime.selectedAnswers.every((s) => !s)) return alert("请填写答案。");
@@ -138,11 +154,47 @@ async function submitAnswer() {
   }
   if (runtime.answerFeedback?.questionId === question.id) return alert("这道题已经提交。");
 
-  const result = await api.submitAnswer(question.id, runtime.selectedAnswers);
-  runtime.state = result.state;
-  runtime.answerFeedback = result.answerResult;
+  // 乐观更新：本地立即判断对错，不等服务端
+  let correct;
+  if (isFillBlank) {
+    const blanksCorrect = runtime.selectedAnswers.map((userAns, i) => {
+      if (!userAns) return false;
+      const acceptable = (question.answer[i] || "").split(/[；;|、]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+      return acceptable.includes(userAns.toLowerCase());
+    });
+    correct = blanksCorrect.length === question.answer.length && blanksCorrect.every(Boolean);
+  } else {
+    const selected = runtime.selectedAnswers.map((s) => s.toUpperCase()).sort();
+    const answer = [...question.answer].sort();
+    correct = selected.length === answer.length && selected.every((s, i) => s === answer[i]);
+  }
+
+  // 立即显示反馈
+  runtime.answerFeedback = {
+    questionId: question.id,
+    selectedAnswers: runtime.selectedAnswers,
+    correct
+  };
   runtime.submittedQuestionId = question.id;
-  renderApp();
+
+  // 更新本地统计
+  const course = activeCourse();
+  course.practice.answeredInRound += 1;
+  course.practice.totalAnswered += 1;
+  if (correct) {
+    course.practice.correctInRound += 1;
+    course.practice.totalCorrect += 1;
+    question.correctCount = (question.correctCount || 0) + 1;
+  } else {
+    question.wrongCount = (question.wrongCount || 0) + 1;
+  }
+  course.practice.lastAnswer = runtime.answerFeedback;
+  updatePracticeOnly();
+
+  // 后台同步服务端（不阻塞 UI）
+  api.submitAnswer(question.id, runtime.selectedAnswers).then((result) => {
+    runtime.state = result.state;
+  }).catch(() => {});
 }
 
 async function resetRound() {
