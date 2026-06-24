@@ -51,6 +51,17 @@
         <h2>随机刷题</h2>
         <button id="resetRoundBtn" class="ghost">重置本轮</button>
       </div>
+      <div class="practice-mode-bar">
+        <label class="practice-mode-label">刷题模式：</label>
+        <label class="practice-mode-option">
+          <input type="radio" name="practiceMode" value="all" checked> 全部题目
+        </label>
+        <label class="practice-mode-option">
+          <input type="radio" name="practiceMode" value="count"> 指定数量
+        </label>
+        <input id="practiceCountInput" type="number" min="1" value="10" class="practice-count-input" style="display:none">
+        <span id="practiceCountHint" class="practice-count-hint" style="display:none">题</span>
+      </div>
       <p id="roundInfo"></p>
       <div id="accuracy" class="accuracy"></div>
       <div class="feedback-settings">

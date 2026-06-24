@@ -10,6 +10,11 @@ loadDotEnv(path.join(rootDir, ".env"));
 
 export const config = {
   port: Number(process.env.PORT || 8787),
+  host: process.env.HOST || "0.0.0.0",
+  databaseUrl: process.env.DATABASE_URL || "",
+  get useDatabase() {
+    return Boolean(this.databaseUrl);
+  },
   mimoApiKey: process.env.MIMO_API_KEY || "",
   mimoBaseUrl: (process.env.MIMO_BASE_URL || "https://token-plan-cn.xiaomimimo.com/v1").replace(/\/+$/, ""),
   mimoModel: process.env.MIMO_MODEL || "mimo-v2.5"

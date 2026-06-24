@@ -10,7 +10,10 @@ export const runtime = {
   answerFeedback: null,
   bankSearch: "",
   editingQuestionId: null,
-  creatingQuestion: false
+  creatingQuestion: false,
+  practiceMode: localStorage.getItem("quiz-platform-practice-mode") || "all",
+  practiceCount: Number(localStorage.getItem("quiz-platform-practice-count")) || 10,
+  bankShowWrongOnly: false
 };
 
 export function activeCourse() {

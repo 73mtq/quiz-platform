@@ -11,7 +11,9 @@ function emptyPractice() {
     totalAnswered: 0,
     totalCorrect: 0,
     currentQuestionId: null,
-    lastAnswer: null
+    lastAnswer: null,
+    mode: "all",
+    count: 0
   };
 }
 

@@ -111,8 +111,25 @@ async function handleApi(req, res, url, repository, aiService) {
     if (req.method === "POST" && url.pathname === "/api/practice/next") {
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
+        const mode = body.mode || course.practice.mode || "all";
+        const count = Number(body.count) || course.practice.count || 0;
+
+        // 记录当前模式到 practice 中
+        course.practice.mode = mode;
+        if (mode === "count" && count > 0) {
+          course.practice.count = count;
+        }
+
         if (!course.practice.remainingIds.length) {
-          course.practice.remainingIds = shuffle(course.questions.map((question) => question.id));
+          const allIds = course.questions.map((question) => question.id);
+          if (mode === "count" && count > 0) {
+            // 指定数量模式：随机抽取 count 道题
+            const shuffled = shuffle(allIds);
+            course.practice.remainingIds = shuffled.slice(0, Math.min(count, shuffled.length));
+          } else {
+            // 全部模式：打乱所有题目
+            course.practice.remainingIds = shuffle(allIds);
+          }
           course.practice.roundNo += course.practice.totalAnswered ? 1 : 0;
           course.practice.answeredInRound = 0;
           course.practice.correctInRound = 0;
@@ -167,6 +184,9 @@ async function handleApi(req, res, url, repository, aiService) {
         if (correct) {
           course.practice.correctInRound += 1;
           course.practice.totalCorrect += 1;
+          question.correctCount = (question.correctCount || 0) + 1;
+        } else {
+          question.wrongCount = (question.wrongCount || 0) + 1;
         }
         course.practice.lastAnswer = {
           id: createId("answer"),
@@ -188,7 +208,21 @@ async function handleApi(req, res, url, repository, aiService) {
     if (req.method === "POST" && url.pathname === "/api/practice/reset-round") {
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
-        course.practice.remainingIds = shuffle(course.questions.map((question) => question.id));
+        const mode = body.mode || course.practice.mode || "all";
+        const count = Number(body.count) || course.practice.count || 0;
+
+        course.practice.mode = mode;
+        if (mode === "count" && count > 0) {
+          course.practice.count = count;
+        }
+
+        const allIds = course.questions.map((question) => question.id);
+        if (mode === "count" && count > 0) {
+          const shuffled = shuffle(allIds);
+          course.practice.remainingIds = shuffled.slice(0, Math.min(count, shuffled.length));
+        } else {
+          course.practice.remainingIds = shuffle(allIds);
+        }
         course.practice.answeredInRound = 0;
         course.practice.correctInRound = 0;
         course.practice.currentQuestionId = null;

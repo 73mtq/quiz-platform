@@ -45,6 +45,8 @@ export function normalizeQuestion(question) {
       ? (question.answer || []).map((item) => String(item).trim()).filter(Boolean)
       : (question.answer || []).map((item) => String(item).trim().toUpperCase()).filter(Boolean),
     explanation: String(question.explanation || "").trim(),
+    wrongCount: Number(question.wrongCount) || 0,
+    correctCount: Number(question.correctCount) || 0,
     createdAt: question.createdAt || new Date().toISOString()
   };
   if (question.updatedAt) normalized.updatedAt = question.updatedAt;
