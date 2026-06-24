@@ -145,9 +145,14 @@ async function nextQuestion() {
   updatePracticeOnly();
   updatePrevBtn();
 
-  // 后台同步服务端
+  // 后台同步服务端（只同步洗牌后的 remainingIds，不覆盖当前题目）
   api.nextQuestion(runtime.practiceMode, runtime.practiceCount).then((state) => {
-    runtime.state = state;
+    const serverCourse = state?.courses?.find((c) => c.id === activeCourse()?.id);
+    if (!serverCourse) return;
+    const localCourse = activeCourse();
+    // 同步 remainingIds（服务端已移除当前题），但保留本地 currentQuestionId
+    localCourse.practice.remainingIds = serverCourse.practice.remainingIds;
+    localCourse.practice.roundNo = serverCourse.practice.roundNo;
   }).catch(() => {});
 }
 
@@ -223,8 +228,19 @@ async function submitAnswer() {
   updatePracticeOnly();
 
   // 后台同步服务端（不阻塞 UI）
+  // 只同步统计数据，不覆盖 currentQuestionId，防止答题后跳题
   api.submitAnswer(question.id, runtime.selectedAnswers).then((result) => {
-    runtime.state = result.state;
+    const serverCourse = result.state?.courses?.find((c) => c.id === activeCourse()?.id);
+    if (!serverCourse) return;
+    const localCourse = activeCourse();
+    localCourse.practice.totalAnswered = serverCourse.practice.totalAnswered;
+    localCourse.practice.totalCorrect = serverCourse.practice.totalCorrect;
+    const serverQ = serverCourse.questions.find((q) => q.id === question.id);
+    const localQ = localCourse.questions.find((q) => q.id === question.id);
+    if (serverQ && localQ) {
+      localQ.wrongCount = serverQ.wrongCount;
+      localQ.correctCount = serverQ.correctCount;
+    }
   }).catch(() => {});
 }
 
