@@ -3,12 +3,13 @@ import { escapeHtml, rate } from "../utils/format.js";
 
 const $ = (selector) => document.querySelector(selector);
 
-/** 给答题卡片添加切换动画 */
+/** 给答题卡片添加切换动画（仅桌面端，移动端跳过以提升性能） */
 function animateQuizCard() {
+  if (window.innerWidth <= 760) return; // 移动端跳过动画
   const card = $("#quizCard");
   if (!card) return;
   card.style.animation = "none";
-  card.offsetHeight; // 触发重绘
+  void card.offsetHeight; // 触发重绘
   card.style.animation = "fadeSlideUp 0.35s var(--ease-out) forwards";
 }
 
@@ -198,6 +199,10 @@ function renderAnswerFeedback(question) {
 }
 
 function renderBank(course) {
+  // 仅在题库面板可见时渲染，避免 1900+ 题目不必要的 DOM 操作
+  const bankPanel = $("#bankPanel");
+  if (!bankPanel || !bankPanel.classList.contains("active")) return;
+
   const wrongCount = course.questions.filter((q) => (q.wrongCount || 0) > 0).length;
   const bankToolbar = $("#bankToolbar");
   if (bankToolbar) {
