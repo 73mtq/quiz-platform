@@ -3,6 +3,15 @@ import { escapeHtml, rate } from "../utils/format.js";
 
 const $ = (selector) => document.querySelector(selector);
 
+/** 给答题卡片添加切换动画 */
+function animateQuizCard() {
+  const card = $("#quizCard");
+  if (!card) return;
+  card.style.animation = "none";
+  card.offsetHeight; // 触发重绘
+  card.style.animation = "fadeSlideUp 0.35s var(--ease-out) forwards";
+}
+
 export function renderApp() {
   const course = activeCourse();
   $("#questionCount").textContent = course.questions.length;
@@ -82,6 +91,7 @@ function renderPractice(course) {
     } else {
       $("#quizCard").innerHTML = `<p class="empty">点击"下一题"开始。</p>`;
     }
+    animateQuizCard();
     return;
   }
 
@@ -92,6 +102,7 @@ function renderPractice(course) {
   } else {
     renderChoicePractice(question);
   }
+  animateQuizCard();
 }
 
 function renderChoicePractice(question) {
