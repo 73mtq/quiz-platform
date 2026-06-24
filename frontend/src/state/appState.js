@@ -13,7 +13,8 @@ export const runtime = {
   creatingQuestion: false,
   practiceMode: localStorage.getItem("quiz-platform-practice-mode") || "all",
   practiceCount: Number(localStorage.getItem("quiz-platform-practice-count")) || 10,
-  bankShowWrongOnly: false
+  bankShowWrongOnly: false,
+  questionHistory: [] // 上一题历史栈
 };
 
 export function activeCourse() {

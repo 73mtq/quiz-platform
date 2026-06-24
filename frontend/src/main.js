@@ -44,6 +44,7 @@ function bind() {
   $("#addCourseBtn").addEventListener("click", addCourse);
   $("#deleteCourseBtn").addEventListener("click", deleteCourse);
   $("#nextBtn").addEventListener("click", nextQuestion);
+  $("#prevBtn").addEventListener("click", prevQuestion);
   $("#submitBtn").addEventListener("click", submitAnswer);
   $("#resetRoundBtn").addEventListener("click", resetRound);
   $("#bankList").addEventListener("click", deleteQuestion);
@@ -63,7 +64,9 @@ function bind() {
       // 切换模式时立即重置
       runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
       clearCurrentAnswer();
+      runtime.questionHistory = [];
       renderApp();
+      updatePrevBtn();
     });
   });
 
@@ -100,7 +103,9 @@ async function importText() {
 async function setActiveCourse(event) {
   runtime.state = await api.setActiveCourse(event.target.value);
   clearCurrentAnswer();
+  runtime.questionHistory = [];
   renderApp();
+  updatePrevBtn();
 }
 
 async function addCourse() {
@@ -120,24 +125,50 @@ async function deleteCourse() {
 async function nextQuestion() {
   // 乐观更新：本地立即切换题目
   const course = activeCourse();
+  const prevId = course.practice.currentQuestionId;
   if (!course.practice.remainingIds.length) {
     // 题目用完了，需要重新洗牌 —— 这种情况必须等服务端
     runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
     clearCurrentAnswer();
     updatePracticeOnly();
+    updatePrevBtn();
     return;
   }
+
+  // 记录历史
+  if (prevId) runtime.questionHistory.push(prevId);
 
   // 本地立即切换
   course.practice.currentQuestionId = course.practice.remainingIds.shift();
   course.practice.lastAnswer = null;
   clearCurrentAnswer();
   updatePracticeOnly();
+  updatePrevBtn();
 
   // 后台同步服务端
   api.nextQuestion(runtime.practiceMode, runtime.practiceCount).then((state) => {
     runtime.state = state;
   }).catch(() => {});
+}
+
+function prevQuestion() {
+  if (!runtime.questionHistory.length) return;
+  const course = activeCourse();
+  const prevId = runtime.questionHistory.pop();
+  // 把当前题放回 remainingIds 头部
+  if (course.practice.currentQuestionId) {
+    course.practice.remainingIds.unshift(course.practice.currentQuestionId);
+  }
+  course.practice.currentQuestionId = prevId;
+  course.practice.lastAnswer = null;
+  clearCurrentAnswer();
+  updatePracticeOnly();
+  updatePrevBtn();
+}
+
+function updatePrevBtn() {
+  const btn = $("#prevBtn");
+  if (btn) btn.style.display = runtime.questionHistory.length ? "" : "none";
 }
 
 async function submitAnswer() {
@@ -200,7 +231,9 @@ async function submitAnswer() {
 async function resetRound() {
   runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
   clearCurrentAnswer();
+  runtime.questionHistory = [];
   renderApp();
+  updatePrevBtn();
 }
 
 async function deleteQuestion(event) {
