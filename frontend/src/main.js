@@ -20,6 +20,8 @@ function bind() {
       document.querySelectorAll(".tabs button,.panel").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       $(`#${button.dataset.tab}`).classList.add("active");
+      // 切换到题库时触发渲染（题库面板默认跳过渲染以提升性能）
+      if (button.dataset.tab === "bankPanel") renderApp();
     });
   });
 

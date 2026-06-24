@@ -71,29 +71,31 @@ body {
   overflow-x: hidden;
 }
 
-/* 背景 — 微妙的径向光晕，非纹理 */
-body::before {
-  content: '';
-  position: fixed;
-  top: -20%;
-  right: -10%;
-  width: 60vw;
-  height: 60vw;
-  background: radial-gradient(circle, rgba(196, 154, 60, 0.06) 0%, transparent 65%);
-  pointer-events: none;
-  z-index: 0;
-}
+/* 背景 — 微妙的径向光晕（仅桌面端，移动端省略以提升性能） */
+@media (min-width: 761px) {
+  body::before {
+    content: '';
+    position: fixed;
+    top: -20%;
+    right: -10%;
+    width: 60vw;
+    height: 60vw;
+    background: radial-gradient(circle, rgba(196, 154, 60, 0.06) 0%, transparent 65%);
+    pointer-events: none;
+    z-index: 0;
+  }
 
-body::after {
-  content: '';
-  position: fixed;
-  bottom: -15%;
-  left: -10%;
-  width: 50vw;
-  height: 50vw;
-  background: radial-gradient(circle, rgba(184, 92, 42, 0.04) 0%, transparent 65%);
-  pointer-events: none;
-  z-index: 0;
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -15%;
+    left: -10%;
+    width: 50vw;
+    height: 50vw;
+    background: radial-gradient(circle, rgba(184, 92, 42, 0.04) 0%, transparent 65%);
+    pointer-events: none;
+    z-index: 0;
+  }
 }
 
 button, input, select, textarea {
@@ -237,14 +239,16 @@ button:not(.ghost) {
   box-shadow: 0 2px 6px rgba(184, 92, 42, 0.2);
 }
 
-button:not(.ghost):hover {
-  background: var(--accent-hover);
-  box-shadow: 0 3px 10px rgba(184, 92, 42, 0.25);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  button:not(.ghost):hover {
+    background: var(--accent-hover);
+    box-shadow: 0 3px 10px rgba(184, 92, 42, 0.25);
+    transform: translateY(-1px);
+  }
 }
 
 button:not(.ghost):active {
-  transform: translateY(1px);
+  transform: scale(0.97);
   box-shadow: 0 1px 3px rgba(184, 92, 42, 0.15);
 }
 
@@ -255,10 +259,12 @@ button.ghost {
   box-shadow: none;
 }
 
-button.ghost:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
+@media (hover: hover) {
+  button.ghost:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
 }
 
 /* ---- 标签页导航 — pill 形状 ---- */
@@ -408,8 +414,10 @@ textarea::placeholder {
   transition: border-color var(--duration-fast);
 }
 
-.import-preview article:hover {
-  border-color: var(--accent);
+@media (hover: hover) {
+  .import-preview article:hover {
+    border-color: var(--accent);
+  }
 }
 
 .import-preview article h3 {
@@ -570,14 +578,17 @@ textarea::placeholder {
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.option:hover {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  transform: translateX(3px);
+/* hover 效果仅在支持 hover 的设备上触发（非触摸屏） */
+@media (hover: hover) {
+  .option:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    transform: translateX(3px);
+  }
 }
 
 .option:active {
-  transform: translateX(1px) scale(0.995);
+  transform: scale(0.98);
 }
 
 .option.is-correct {
@@ -744,9 +755,11 @@ textarea::placeholder {
   transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
 }
 
-.bank-item:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-xs);
+@media (hover: hover) {
+  .bank-item:hover {
+    border-color: var(--accent);
+    box-shadow: var(--shadow-xs);
+  }
 }
 
 .bank-options {
@@ -1013,6 +1026,24 @@ textarea::placeholder {
 
 /* ---- 移动端 — 明确声明，非假设 ---- */
 @media (max-width: 760px) {
+  /* 禁用入场动画，减少 GPU 负担 */
+  .eyebrow, .hero h1, .hero > div:first-child p:last-child,
+  .metric, .toolbar, .tabs {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* 简化阴影 */
+  .metric, .panel, .toolbar {
+    box-shadow: var(--shadow-xs);
+  }
+
+  /* 简化过渡 */
+  * {
+    transition-duration: 100ms !important;
+  }
+
   .app {
     width: calc(100% - 20px);
     padding: 20px 0 32px;
