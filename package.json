@@ -6,6 +6,10 @@
   "scripts": {
     "start": "node backend/src/server.js",
     "check": "node --check backend/src/server.js",
-    "migrate:quiz-maker": "node backend/src/scripts/migrate-from-quiz-maker.js"
+    "migrate:quiz-maker": "node backend/src/scripts/migrate-from-quiz-maker.js",
+    "migrate:to-db": "node backend/src/scripts/migrate-to-db.js"
+  },
+  "dependencies": {
+    "pg": "^8.22.0"
   }
 }

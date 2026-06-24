@@ -58,13 +58,30 @@ function renderImportQuestion(question, index) {
 function renderPractice(course) {
   const practice = course.practice;
   const question = currentQuestion();
-  $("#roundInfo").textContent = `${course.name}：第 ${practice.roundNo} 轮，剩余 ${practice.remainingIds.length}/${course.questions.length} 题`;
+  const mode = practice.mode || "all";
+  const count = practice.count || 0;
+
+  // 同步模式选择 UI
+  const countInput = $("#practiceCountInput");
+  const countHint = $("#practiceCountHint");
+  if (countInput) {
+    countInput.style.display = runtime.practiceMode === "count" ? "" : "none";
+    if (runtime.practiceMode === "count" && runtime.practiceCount > 0) countInput.value = runtime.practiceCount;
+  }
+  if (countHint) countHint.style.display = runtime.practiceMode === "count" ? "" : "none";
+
+  const modeLabel = mode === "count" ? `指定 ${count} 题` : "全部题目";
+  $("#roundInfo").textContent = `${course.name}：${modeLabel}，剩余 ${practice.remainingIds.length} 题`;
   $("#accuracy").innerHTML = `
-    <div><strong>${rate(practice.correctInRound, practice.answeredInRound)}</strong><span>本轮正确率 ${practice.correctInRound}/${practice.answeredInRound}</span></div>
-    <div><strong>${rate(practice.totalCorrect, practice.totalAnswered)}</strong><span>累计正确率 ${practice.totalCorrect}/${practice.totalAnswered}</span></div>
+    <div><strong>${rate(practice.correctInRound, practice.answeredInRound)}</strong><span>正确率 ${practice.correctInRound}/${practice.answeredInRound}</span></div>
   `;
   if (!question) {
-    $("#quizCard").innerHTML = `<p class="empty">点击"下一题"开始。</p>`;
+    // 指定数量模式下刷完本轮显示完成提示
+    if (mode === "count" && practice.answeredInRound > 0) {
+      $("#quizCard").innerHTML = `<p class="empty round-done">${practice.answeredInRound} 题已完成！正确率 ${rate(practice.correctInRound, practice.answeredInRound)}。点击"重置本轮"重新开始。</p>`;
+    } else {
+      $("#quizCard").innerHTML = `<p class="empty">点击"下一题"开始。</p>`;
+    }
     return;
   }
 
@@ -81,8 +98,10 @@ function renderChoicePractice(question) {
   const isMulti = question.answer.length > 1;
   const inputType = isMulti ? "checkbox" : "radio";
   const multiHint = isMulti ? `<span class="multi-hint">（多选题，共${question.answer.length}个答案）</span>` : "";
+  const wrongCount = question.wrongCount || 0;
+  const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
   $("#quizCard").innerHTML = `
-    <h3>${escapeHtml(question.stem)} ${multiHint}</h3>
+    <h3>${escapeHtml(question.stem)} ${multiHint} ${wrongTag}</h3>
     ${question.options.map((option) => `
       <label class="option ${optionClass(question, option.key)}">
         <input type="${inputType}" name="answer" value="${option.key}" ${runtime.answerFeedback ? "disabled" : ""}>
@@ -112,6 +131,8 @@ function renderFillBlankPractice(question) {
   const hasSubmitted = feedback && feedback.questionId === question.id;
   const blankCount = question.answer.length;
   const blankHint = blankCount > 1 ? `<span class="multi-hint">（共 ${blankCount} 个空）</span>` : "";
+  const wrongCount = question.wrongCount || 0;
+  const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
 
   const blanksHtml = Array.from({ length: blankCount }, (_, i) => {
     const val = runtime.selectedAnswers[i] || "";
@@ -119,7 +140,7 @@ function renderFillBlankPractice(question) {
   }).join("");
 
   $("#quizCard").innerHTML = `
-    <h3>${escapeHtml(question.stem)} ${blankHint}</h3>
+    <h3>${escapeHtml(question.stem)} ${blankHint} ${wrongTag}</h3>
     <div class="fill-blank-area">${blanksHtml}</div>
     <div id="answerResult">${renderAnswerFeedback(question)}</div>
   `;
@@ -166,19 +187,25 @@ function renderAnswerFeedback(question) {
 }
 
 function renderBank(course) {
+  const wrongCount = course.questions.filter((q) => (q.wrongCount || 0) > 0).length;
   const bankToolbar = $("#bankToolbar");
   if (bankToolbar) {
     bankToolbar.innerHTML = `
       <span class="bank-count">共 ${course.questions.length} 题</span>
+      <button id="toggleWrongOnlyBtn" class="ghost ${runtime.bankShowWrongOnly ? "active-filter" : ""}">只看错题（${wrongCount}）</button>
       <input type="text" id="bankSearch" placeholder="搜索题干关键词..." value="${runtime.bankSearch || ""}">
       <button id="createQuestionBtn" class="ghost">手动出题</button>
     `;
   }
 
   const keyword = (runtime.bankSearch || "").trim().toLowerCase();
-  const filtered = keyword
+  let filtered = keyword
     ? course.questions.filter((q) => q.stem.toLowerCase().includes(keyword))
     : course.questions;
+  if (runtime.bankShowWrongOnly) {
+    filtered = filtered.filter((q) => (q.wrongCount || 0) > 0);
+    filtered = [...filtered].sort((a, b) => (b.wrongCount || 0) - (a.wrongCount || 0));
+  }
 
   const bankList = $("#bankList");
   if (runtime.creatingQuestion) {
@@ -197,10 +224,15 @@ function renderBankList(questions) {
     }
     const isFillBlank = question.type === "fill-blank";
     const typeTag = isFillBlank ? `<span class="tag-fill-blank">填空题</span>` : "";
+    const wrongCount = question.wrongCount || 0;
+    const correctCount = question.correctCount || 0;
+    const statsTag = wrongCount > 0 || correctCount > 0
+      ? `<span class="stats-tag">${wrongCount > 0 ? `错 ${wrongCount}` : ""}${wrongCount > 0 && correctCount > 0 ? " / " : ""}${correctCount > 0 ? `对 ${correctCount}` : ""}</span>`
+      : "";
     return `
       <article class="bank-item">
         <div>
-          <h3>${index + 1}. ${escapeHtml(question.stem)} ${typeTag}</h3>
+          <h3>${index + 1}. ${escapeHtml(question.stem)} ${typeTag} ${statsTag}</h3>
           ${isFillBlank ? "" : `
           <div class="bank-options">
             ${question.options.map((option) => `<p><b>${option.key}.</b> ${escapeHtml(option.text)}</p>`).join("")}

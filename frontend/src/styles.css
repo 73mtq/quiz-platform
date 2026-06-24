@@ -514,6 +514,82 @@ textarea {
   background: var(--card);
 }
 
+/* 错题计数标签 */
+.wrong-count-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+  background: #ffe1d5;
+}
+
+.stats-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(111, 101, 91, 0.1);
+}
+
+/* 刷题模式选择 */
+.practice-mode-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 10px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+}
+
+.practice-mode-label {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.practice-mode-option {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.practice-count-input {
+  width: 70px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 6px 10px;
+  text-align: center;
+  background: var(--card);
+}
+
+.practice-count-hint {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* 本轮完成提示 */
+.round-done {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* 错题筛选按钮激活态 */
+.active-filter {
+  color: #fff !important;
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+}
+
 @media (max-width: 760px) {
   .app {
     width: min(100% - 20px, 1120px);

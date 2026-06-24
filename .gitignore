@@ -1,5 +1,6 @@
 .env
 data/*.json
+data/backups/
 node_modules/
 *.log
 .DS_Store

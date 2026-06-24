@@ -48,6 +48,40 @@ function bind() {
   $("#bankList").addEventListener("click", handleBankActions);
   $("#bankToolbar").addEventListener("click", handleBankToolbar);
   $("#bankToolbar").addEventListener("input", handleBankSearch);
+
+  // 刷题模式切换
+  document.querySelectorAll("input[name='practiceMode']").forEach((radio) => {
+    radio.addEventListener("change", async (event) => {
+      runtime.practiceMode = event.target.value;
+      localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
+      const countInput = $("#practiceCountInput");
+      const countHint = $("#practiceCountHint");
+      if (countInput) countInput.style.display = runtime.practiceMode === "count" ? "" : "none";
+      if (countHint) countHint.style.display = runtime.practiceMode === "count" ? "" : "none";
+      // 切换模式时立即重置
+      runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
+      clearCurrentAnswer();
+      renderApp();
+    });
+  });
+
+  const countInput = $("#practiceCountInput");
+  if (countInput) {
+    countInput.addEventListener("input", (event) => {
+      runtime.practiceCount = Math.max(1, Number(event.target.value) || 1);
+      localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
+    });
+    // 数量输入框失焦或回车时重置
+    countInput.addEventListener("change", async () => {
+      runtime.practiceCount = Math.max(1, Number(countInput.value) || 1);
+      localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
+      if (runtime.practiceMode === "count") {
+        runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
+        clearCurrentAnswer();
+        renderApp();
+      }
+    });
+  }
 }
 
 async function importText() {
@@ -82,7 +116,7 @@ async function deleteCourse() {
 }
 
 async function nextQuestion() {
-  runtime.state = await api.nextQuestion();
+  runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
   clearCurrentAnswer();
   renderApp();
 }
@@ -110,7 +144,7 @@ async function submitAnswer() {
 }
 
 async function resetRound() {
-  runtime.state = await api.resetRound();
+  runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
   clearCurrentAnswer();
   renderApp();
 }
@@ -134,6 +168,10 @@ function handleBankToolbar(event) {
   if (event.target.id === "createQuestionBtn") {
     runtime.creatingQuestion = true;
     runtime.editingQuestionId = null;
+    renderApp();
+  }
+  if (event.target.id === "toggleWrongOnlyBtn") {
+    runtime.bankShowWrongOnly = !runtime.bankShowWrongOnly;
     renderApp();
   }
 }
@@ -336,6 +374,18 @@ async function recognizeImage() {
 try {
   runtime.state = await api.state();
   bind();
+
+  // 初始化刷题模式 UI
+  const modeRadio = document.querySelector(`input[name='practiceMode'][value='${runtime.practiceMode}']`);
+  if (modeRadio) modeRadio.checked = true;
+  const countInput = document.querySelector("#practiceCountInput");
+  const countHint = document.querySelector("#practiceCountHint");
+  if (countInput) {
+    countInput.style.display = runtime.practiceMode === "count" ? "" : "none";
+    countInput.value = runtime.practiceCount;
+  }
+  if (countHint) countHint.style.display = runtime.practiceMode === "count" ? "" : "none";
+
   renderApp();
 } catch (err) {
   document.querySelector(".app").innerHTML = `<div style="padding:40px;color:red;font-size:18px;"><h2>页面加载出错</h2><pre>${err.message}\n${err.stack}</pre><p>请截图发给开发者。</p></div>`;
