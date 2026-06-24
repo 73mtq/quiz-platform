@@ -4,12 +4,3 @@ services:
     runtime: node
     buildCommand: npm install
     startCommand: npm start
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: MIMO_API_KEY
-        sync: false
-      - key: MIMO_BASE_URL
-        sync: false
-      - key: MIMO_MODEL
-        sync: false
