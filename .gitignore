@@ -4,3 +4,4 @@ data/backups/
 node_modules/
 *.log
 .DS_Store
+data/*.json.bak-*
