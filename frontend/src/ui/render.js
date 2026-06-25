@@ -119,6 +119,16 @@ function renderPractice(course) {
     renderChoicePractice(question);
   }
   animateQuizCard();
+
+  // 有答案反馈时自动滚动到操作按钮（答题后或刷新页面）
+  if (runtime.answerFeedback) {
+    requestAnimationFrame(() => {
+      const actions = document.querySelector(".actions");
+      if (actions) {
+        actions.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  }
 }
 
 function renderChoicePractice(question) {
