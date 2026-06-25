@@ -43,7 +43,7 @@ export function normalizeQuestion(question) {
     })).filter((option) => option.key && option.text),
     answer: type === "fill-blank"
       ? (question.answer || []).map((item) => String(item).trim()).filter(Boolean)
-      : (question.answer || []).map((item) => String(item).trim().toUpperCase()).filter(Boolean),
+      : [...new Set((question.answer || []).map((item) => String(item).trim().toUpperCase()).filter(Boolean))],
     explanation: String(question.explanation || "").trim(),
     wrongCount: Number(question.wrongCount) || 0,
     correctCount: Number(question.correctCount) || 0,
