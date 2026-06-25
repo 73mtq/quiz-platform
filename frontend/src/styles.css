@@ -646,6 +646,48 @@ textarea::placeholder {
   vertical-align: middle;
 }
 
+/* 收藏按钮 */
+.quiz-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.quiz-card-header h3 {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.bookmark-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bookmark-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
+.bookmark-btn.active {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: var(--gold-soft);
+}
+
 .stats-tag {
   display: inline-block;
   margin-left: 5px;
@@ -1119,5 +1161,14 @@ textarea::placeholder {
 
   .quiz-card h3 {
     font-size: 14px;
+  }
+
+  .quiz-card-header {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+
+  .bookmark-btn {
+    align-self: flex-end;
   }
 }

@@ -19,6 +19,7 @@ export const api = {
   addQuestions: (questions) => request("/api/questions", { method: "POST", body: JSON.stringify({ questions }) }),
   deleteQuestion: (questionId) => request("/api/questions/delete", { method: "POST", body: JSON.stringify({ questionId }) }),
   updateQuestion: (questionId, data) => request("/api/questions/update", { method: "POST", body: JSON.stringify({ questionId, ...data }) }),
+  bookmarkQuestion: (questionId) => request("/api/questions/bookmark", { method: "POST", body: JSON.stringify({ questionId }) }),
   nextQuestion: (mode, count) => request("/api/practice/next", { method: "POST", body: JSON.stringify({ mode, count }) }),
   submitAnswer: (questionId, selectedAnswers) => request("/api/practice/answer", {
     method: "POST",

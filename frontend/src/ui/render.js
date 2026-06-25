@@ -1,6 +1,16 @@
 import { activeCourse, currentQuestion, runtime, settings } from "../state/appState.js";
 import { escapeHtml, rate } from "../utils/format.js";
 
+/** 随机打乱数组（Fisher-Yates 洗牌算法） */
+function shuffleArray(arr) {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
 const $ = (selector) => document.querySelector(selector);
 
 /** 给答题卡片添加切换动画（仅桌面端，移动端跳过以提升性能） */
@@ -85,7 +95,7 @@ function renderPractice(course) {
   }
   if (countHint) countHint.style.display = runtime.practiceMode === "count" ? "" : "none";
 
-  const modeLabel = mode === "count" ? `指定 ${count} 题` : "全部题目";
+  const modeLabel = mode === "wrong" ? "错题重做" : mode === "count" ? `指定 ${count} 题` : "全部题目";
   $("#roundInfo").textContent = `${course.name}：${modeLabel}，剩余 ${practice.remainingIds.length} 题`;
   $("#accuracy").innerHTML = `
     <div><strong>${rate(practice.correctInRound, practice.answeredInRound)}</strong><span>正确率 ${practice.correctInRound}/${practice.answeredInRound}</span></div>
@@ -117,9 +127,14 @@ function renderChoicePractice(question) {
   const multiHint = isMulti ? `<span class="multi-hint">（多选题，共${question.answer.length}个答案）</span>` : "";
   const wrongCount = question.wrongCount || 0;
   const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
+  const bookmarked = question.bookmarked ? "active" : "";
+  const options = settings.shuffleOptions ? shuffleArray(question.options) : question.options;
   $("#quizCard").innerHTML = `
-    <h3>${escapeHtml(question.stem)} ${multiHint} ${wrongTag}</h3>
-    ${question.options.map((option) => `
+    <div class="quiz-card-header">
+      <h3>${escapeHtml(question.stem)} ${multiHint} ${wrongTag}</h3>
+      <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏">★</button>
+    </div>
+    ${options.map((option) => `
       <label class="option ${optionClass(question, option.key)}">
         <input type="${inputType}" name="answer" value="${option.key}" ${runtime.answerFeedback ? "disabled" : ""}>
         <span><b>${option.key}.</b> ${escapeHtml(option.text)}</span>
@@ -150,6 +165,7 @@ function renderFillBlankPractice(question) {
   const blankHint = blankCount > 1 ? `<span class="multi-hint">（共 ${blankCount} 个空）</span>` : "";
   const wrongCount = question.wrongCount || 0;
   const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
+  const bookmarked = question.bookmarked ? "active" : "";
 
   const blanksHtml = Array.from({ length: blankCount }, (_, i) => {
     const val = runtime.selectedAnswers[i] || "";
@@ -157,7 +173,10 @@ function renderFillBlankPractice(question) {
   }).join("");
 
   $("#quizCard").innerHTML = `
-    <h3>${escapeHtml(question.stem)} ${blankHint} ${wrongTag}</h3>
+    <div class="quiz-card-header">
+      <h3>${escapeHtml(question.stem)} ${blankHint} ${wrongTag}</h3>
+      <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏">★</button>
+    </div>
     <div class="fill-blank-area">${blanksHtml}</div>
     <div id="answerResult">${renderAnswerFeedback(question)}</div>
   `;
@@ -209,11 +228,13 @@ function renderBank(course) {
   if (!bankPanel || !bankPanel.classList.contains("active")) return;
 
   const wrongCount = course.questions.filter((q) => (q.wrongCount || 0) > 0).length;
+  const bookmarkedCount = course.questions.filter((q) => q.bookmarked).length;
   const bankToolbar = $("#bankToolbar");
   if (bankToolbar) {
     bankToolbar.innerHTML = `
       <span class="bank-count">共 ${course.questions.length} 题</span>
       <button id="toggleWrongOnlyBtn" class="ghost ${runtime.bankShowWrongOnly ? "active-filter" : ""}">只看错题（${wrongCount}）</button>
+      <button id="toggleBookmarkedOnlyBtn" class="ghost ${runtime.bankShowBookmarkedOnly ? "active-filter" : ""}">只看收藏（${bookmarkedCount}）</button>
       <input type="text" id="bankSearch" placeholder="搜索题干关键词..." value="${runtime.bankSearch || ""}">
       <button id="createQuestionBtn" class="ghost">手动出题</button>
     `;
@@ -226,6 +247,9 @@ function renderBank(course) {
   if (runtime.bankShowWrongOnly) {
     filtered = filtered.filter((q) => (q.wrongCount || 0) > 0);
     filtered = [...filtered].sort((a, b) => (b.wrongCount || 0) - (a.wrongCount || 0));
+  }
+  if (runtime.bankShowBookmarkedOnly) {
+    filtered = filtered.filter((q) => q.bookmarked);
   }
 
   const bankList = $("#bankList");

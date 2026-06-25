@@ -108,6 +108,22 @@ async function handleApi(req, res, url, repository, aiService) {
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/questions/bookmark") {
+      const { questionId } = body;
+      if (!questionId) {
+        sendJson(res, 400, { error: "缺少题目 ID" });
+        return;
+      }
+      const state = await repository.update((draft) => {
+        const course = repository.getActiveCourse(draft);
+        const question = course.questions.find((q) => q.id === questionId);
+        if (!question) throw new Error("题目不存在");
+        question.bookmarked = !question.bookmarked;
+      });
+      sendJson(res, 200, state);
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/practice/next") {
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
@@ -121,13 +137,22 @@ async function handleApi(req, res, url, repository, aiService) {
         }
 
         if (!course.practice.remainingIds.length) {
-          const allIds = course.questions.map((question) => question.id);
+          let allIds;
+          if (mode === "wrong") {
+            // 错题重做模式：只抽取答错且从未答对的题目
+            allIds = course.questions
+              .filter((q) => (q.wrongCount || 0) > 0 && (q.correctCount || 0) === 0)
+              .map((q) => q.id);
+          } else {
+            allIds = course.questions.map((question) => question.id);
+          }
+
           if (mode === "count" && count > 0) {
             // 指定数量模式：随机抽取 count 道题
             const shuffled = shuffle(allIds);
             course.practice.remainingIds = shuffled.slice(0, Math.min(count, shuffled.length));
           } else {
-            // 全部模式：打乱所有题目
+            // 全部模式/错题模式：打乱所有题目
             course.practice.remainingIds = shuffle(allIds);
           }
           course.practice.roundNo += course.practice.totalAnswered ? 1 : 0;
@@ -216,7 +241,16 @@ async function handleApi(req, res, url, repository, aiService) {
           course.practice.count = count;
         }
 
-        const allIds = course.questions.map((question) => question.id);
+        let allIds;
+        if (mode === "wrong") {
+          // 错题重做模式：只抽取答错且从未答对的题目
+          allIds = course.questions
+            .filter((q) => (q.wrongCount || 0) > 0 && (q.correctCount || 0) === 0)
+            .map((q) => q.id);
+        } else {
+          allIds = course.questions.map((question) => question.id);
+        }
+
         if (mode === "count" && count > 0) {
           const shuffled = shuffle(allIds);
           course.practice.remainingIds = shuffled.slice(0, Math.min(count, shuffled.length));

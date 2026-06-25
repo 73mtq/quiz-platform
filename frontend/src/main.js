@@ -28,6 +28,8 @@ function bind() {
   $("#sampleBtn").addEventListener("click", () => { $("#sourceText").value = sample; });
   $("#showAnswerToggle").checked = settings.showAnswer;
   $("#showExplanationToggle").checked = settings.showExplanation;
+  $("#autoNextToggle").checked = settings.autoNext;
+  $("#shuffleOptionsToggle").checked = settings.shuffleOptions;
   $("#showAnswerToggle").addEventListener("change", (event) => {
     settings.showAnswer = event.target.checked;
     persistFeedbackSettings();
@@ -35,6 +37,15 @@ function bind() {
   });
   $("#showExplanationToggle").addEventListener("change", (event) => {
     settings.showExplanation = event.target.checked;
+    persistFeedbackSettings();
+    renderApp();
+  });
+  $("#autoNextToggle").addEventListener("change", (event) => {
+    settings.autoNext = event.target.checked;
+    persistFeedbackSettings();
+  });
+  $("#shuffleOptionsToggle").addEventListener("change", (event) => {
+    settings.shuffleOptions = event.target.checked;
     persistFeedbackSettings();
     renderApp();
   });
@@ -51,6 +62,9 @@ function bind() {
   $("#bankList").addEventListener("click", handleBankActions);
   $("#bankToolbar").addEventListener("click", handleBankToolbar);
   $("#bankToolbar").addEventListener("input", handleBankSearch);
+
+  // 收藏按钮点击
+  $("#quizCard").addEventListener("click", handleBookmarkClick);
 
   // 刷题模式切换
   document.querySelectorAll("input[name='practiceMode']").forEach((radio) => {
@@ -249,6 +263,13 @@ async function submitAnswer() {
       localQ.correctCount = serverQ.correctCount;
     }
   }).catch(() => {});
+
+  // 答对自动下一题
+  if (correct && settings.autoNext) {
+    setTimeout(() => {
+      nextQuestion();
+    }, 1500);
+  }
 }
 
 async function resetRound() {
@@ -284,6 +305,19 @@ function handleBankToolbar(event) {
     runtime.bankShowWrongOnly = !runtime.bankShowWrongOnly;
     renderApp();
   }
+  if (event.target.id === "toggleBookmarkedOnlyBtn") {
+    runtime.bankShowBookmarkedOnly = !runtime.bankShowBookmarkedOnly;
+    renderApp();
+  }
+}
+
+async function handleBookmarkClick(event) {
+  const btn = event.target.closest("[data-bookmark]");
+  if (!btn) return;
+
+  const questionId = btn.dataset.bookmark;
+  runtime.state = await api.bookmarkQuestion(questionId);
+  renderApp();
 }
 
 function handleBankActions(event) {
@@ -481,6 +515,66 @@ async function recognizeImage() {
   }
 }
 
+function bindKeyboardShortcuts() {
+  document.addEventListener("keydown", (event) => {
+    // 如果用户正在输入框中输入，不触发快捷键
+    const tagName = event.target.tagName;
+    if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
+
+    const key = event.key.toUpperCase();
+
+    // A/B/C/D 选择选项
+    if (["A", "B", "C", "D"].includes(key)) {
+      const question = currentQuestion();
+      if (!question || runtime.answerFeedback) return;
+
+      // 检查选项是否存在
+      const optionExists = question.options.some((opt) => opt.key === key);
+      if (!optionExists) return;
+
+      const isMulti = question.answer.length > 1;
+      const input = document.querySelector(`input[name='answer'][value='${key}']`);
+      if (!input) return;
+
+      if (isMulti) {
+        input.checked = !input.checked;
+        if (input.checked) {
+          runtime.selectedAnswers = [...runtime.selectedAnswers, key];
+        } else {
+          runtime.selectedAnswers = runtime.selectedAnswers.filter((v) => v !== key);
+        }
+      } else {
+        document.querySelectorAll("input[name='answer']").forEach((el) => {
+          el.checked = false;
+        });
+        input.checked = true;
+        runtime.selectedAnswers = [key];
+      }
+      return;
+    }
+
+    // Enter 提交答案
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitAnswer();
+      return;
+    }
+
+    // 右箭头或空格 下一题
+    if (event.key === "ArrowRight" || event.key === " ") {
+      event.preventDefault();
+      nextQuestion();
+      return;
+    }
+
+    // 左箭头 上一题
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      prevQuestion();
+    }
+  });
+}
+
 try {
   runtime.state = await api.state();
   bind();
@@ -495,6 +589,9 @@ try {
     countInput.value = runtime.practiceCount;
   }
   if (countHint) countHint.style.display = runtime.practiceMode === "count" ? "" : "none";
+
+  // 初始化键盘快捷键
+  bindKeyboardShortcuts();
 
   renderApp();
 } catch (err) {

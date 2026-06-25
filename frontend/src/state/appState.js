@@ -1,6 +1,8 @@
 export const settings = {
   showAnswer: localStorage.getItem("quiz-platform-show-answer") !== "0",
-  showExplanation: localStorage.getItem("quiz-platform-show-explanation") !== "0"
+  showExplanation: localStorage.getItem("quiz-platform-show-explanation") !== "0",
+  autoNext: localStorage.getItem("quiz-platform-auto-next") === "1",
+  shuffleOptions: localStorage.getItem("quiz-platform-shuffle-options") === "1"
 };
 
 export const runtime = {
@@ -14,6 +16,7 @@ export const runtime = {
   practiceMode: localStorage.getItem("quiz-platform-practice-mode") || "all",
   practiceCount: Number(localStorage.getItem("quiz-platform-practice-count")) || 10,
   bankShowWrongOnly: false,
+  bankShowBookmarkedOnly: false,
   questionHistory: [] // 上一题历史栈
 };
 
@@ -35,4 +38,6 @@ export function clearCurrentAnswer() {
 export function persistFeedbackSettings() {
   localStorage.setItem("quiz-platform-show-answer", settings.showAnswer ? "1" : "0");
   localStorage.setItem("quiz-platform-show-explanation", settings.showExplanation ? "1" : "0");
+  localStorage.setItem("quiz-platform-auto-next", settings.autoNext ? "1" : "0");
+  localStorage.setItem("quiz-platform-shuffle-options", settings.shuffleOptions ? "1" : "0");
 }
