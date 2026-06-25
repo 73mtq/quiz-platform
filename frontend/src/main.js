@@ -244,6 +244,12 @@ async function submitAnswer() {
   course.practice.lastAnswer = runtime.answerFeedback;
   updatePracticeOnly();
 
+  // 答题后自动滚动到操作按钮
+  const actions = document.querySelector(".actions");
+  if (actions) {
+    actions.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
   // 后台同步服务端（不阻塞 UI）
   // 同步统计数据，不覆盖 currentQuestionId，防止答题后跳题
   api.submitAnswer(question.id, runtime.selectedAnswers).then((result) => {
