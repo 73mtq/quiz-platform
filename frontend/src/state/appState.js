@@ -20,47 +20,6 @@ export const runtime = {
   questionHistory: [] // 上一题历史栈
 };
 
-// 保存刷题进度到 localStorage
-export function savePracticeProgress(courseId, practice) {
-  const progress = {
-    remainingIds: practice.remainingIds,
-    currentQuestionId: practice.currentQuestionId,
-    answeredInRound: practice.answeredInRound,
-    correctInRound: practice.correctInRound,
-    roundNo: practice.roundNo,
-    mode: practice.mode,
-    count: practice.count
-  };
-  localStorage.setItem(`quiz-platform-progress-${courseId}`, JSON.stringify(progress));
-}
-
-// 从 localStorage 恢复刷题进度
-export function loadPracticeProgress(courseId) {
-  try {
-    const saved = localStorage.getItem(`quiz-platform-progress-${courseId}`);
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return null;
-}
-
-// 保存答题反馈
-export function saveAnswerFeedback(courseId, feedback) {
-  if (feedback) {
-    localStorage.setItem(`quiz-platform-feedback-${courseId}`, JSON.stringify(feedback));
-  } else {
-    localStorage.removeItem(`quiz-platform-feedback-${courseId}`);
-  }
-}
-
-// 加载答题反馈
-export function loadAnswerFeedback(courseId) {
-  try {
-    const saved = localStorage.getItem(`quiz-platform-feedback-${courseId}`);
-    if (saved) return JSON.parse(saved);
-  } catch {}
-  return null;
-}
-
 export function activeCourse() {
   return runtime.state.courses.find((course) => course.id === runtime.state.activeCourseId) || runtime.state.courses[0];
 }

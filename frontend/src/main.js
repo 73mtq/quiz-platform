@@ -1,5 +1,5 @@
 import { api } from "./api/client.js";
-import { activeCourse, clearCurrentAnswer, currentQuestion, persistFeedbackSettings, runtime, settings, savePracticeProgress, loadPracticeProgress, saveAnswerFeedback, loadAnswerFeedback } from "./state/appState.js";
+import { activeCourse, clearCurrentAnswer, currentQuestion, persistFeedbackSettings, runtime, settings } from "./state/appState.js";
 import { renderApp, renderImportResult, updatePracticeOnly } from "./ui/render.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
@@ -197,10 +197,6 @@ async function nextQuestion() {
   updatePracticeOnly();
   updatePrevBtn();
 
-  // 保存进度到 localStorage
-  savePracticeProgress(course.id, course.practice);
-  saveAnswerFeedback(course.id, null);
-
   // 后台同步服务端（只同步统计数据，不同步 remainingIds）
   api.nextQuestion(runtime.practiceMode, runtime.practiceCount).then((state) => {
     const serverCourse = state?.courses?.find((c) => c.id === activeCourse()?.id);
@@ -286,10 +282,6 @@ async function submitAnswer() {
   course.practice.lastAnswer = runtime.answerFeedback;
   updatePracticeOnly();
 
-  // 保存进度到 localStorage
-  savePracticeProgress(course.id, course.practice);
-  saveAnswerFeedback(course.id, runtime.answerFeedback);
-
   // 答题后自动滚动到操作按钮
   const actions = document.querySelector(".actions");
   if (actions) {
@@ -328,12 +320,6 @@ async function resetRound() {
   runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
   clearCurrentAnswer();
   runtime.questionHistory = [];
-
-  // 清除保存的进度
-  const course = activeCourse();
-  savePracticeProgress(course.id, course.practice);
-  saveAnswerFeedback(course.id, null);
-
   renderApp();
   updatePrevBtn();
 }
@@ -637,26 +623,11 @@ try {
   runtime.state = await api.state();
   bind();
 
-  // 从 localStorage 恢复刷题进度
+  // 从服务端获取状态（数据库或 JSON 文件）
   const course = activeCourse();
-  const savedProgress = loadPracticeProgress(course.id);
-  if (savedProgress) {
-    course.practice.remainingIds = savedProgress.remainingIds || [];
-    course.practice.currentQuestionId = savedProgress.currentQuestionId || null;
-    course.practice.answeredInRound = savedProgress.answeredInRound || 0;
-    course.practice.correctInRound = savedProgress.correctInRound || 0;
-    course.practice.roundNo = savedProgress.roundNo || 1;
-    course.practice.mode = savedProgress.mode || "all";
-    course.practice.count = savedProgress.count || 0;
-  }
 
   // 恢复答题反馈
-  const savedFeedback = loadAnswerFeedback(course.id);
-  if (savedFeedback) {
-    runtime.answerFeedback = savedFeedback;
-    runtime.selectedAnswers = savedFeedback.selectedAnswers || [];
-    runtime.submittedQuestionId = savedFeedback.questionId;
-  } else if (course.practice.lastAnswer) {
+  if (course.practice.lastAnswer) {
     runtime.answerFeedback = course.practice.lastAnswer;
     runtime.selectedAnswers = course.practice.lastAnswer.selectedAnswers || [];
     runtime.submittedQuestionId = course.practice.lastAnswer.questionId;
