@@ -74,6 +74,9 @@ function bind() {
   const bankList = $("#bankList");
   const bankToolbar = $("#bankToolbar");
   const quizCard = $("#quizCard");
+  const submitBtn = $("#submitBtn");
+  const prevBtn = $("#prevBtn");
+  const nextBtn = $("#nextBtn");
 
   if (importTextBtn) importTextBtn.addEventListener("click", importText);
   if (aiBtn) aiBtn.addEventListener("click", recognizeImage);
@@ -81,6 +84,9 @@ function bind() {
   if (addCourseBtn) addCourseBtn.addEventListener("click", addCourse);
   if (deleteCourseBtn) deleteCourseBtn.addEventListener("click", deleteCourse);
   if (resetRoundBtn) resetRoundBtn.addEventListener("click", resetRound);
+  if (submitBtn) submitBtn.addEventListener("click", submitAnswer);
+  if (prevBtn) prevBtn.addEventListener("click", prevQuestion);
+  if (nextBtn) nextBtn.addEventListener("click", nextQuestion);
   if (bankList) {
     bankList.addEventListener("click", deleteQuestion);
     bankList.addEventListener("click", handleBankActions);
@@ -90,13 +96,10 @@ function bind() {
     bankToolbar.addEventListener("input", handleBankSearch);
   }
 
-  // 使用事件委托处理答题卡片内的按钮点击
+  // 使用事件委托处理答题卡片内的收藏按钮点击
   if (quizCard) {
     quizCard.addEventListener("click", (event) => {
       const target = event.target;
-      if (target.id === "submitBtn") submitAnswer();
-      if (target.id === "prevBtn") prevQuestion();
-      if (target.id === "nextBtn") nextQuestion();
       if (target.closest("[data-bookmark]")) handleBookmarkClick(event);
     });
   }
