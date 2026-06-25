@@ -54,17 +54,20 @@ function bind() {
   $("#courseSelect").addEventListener("change", setActiveCourse);
   $("#addCourseBtn").addEventListener("click", addCourse);
   $("#deleteCourseBtn").addEventListener("click", deleteCourse);
-  $("#nextBtn").addEventListener("click", nextQuestion);
-  $("#prevBtn").addEventListener("click", prevQuestion);
-  $("#submitBtn").addEventListener("click", submitAnswer);
   $("#resetRoundBtn").addEventListener("click", resetRound);
   $("#bankList").addEventListener("click", deleteQuestion);
   $("#bankList").addEventListener("click", handleBankActions);
   $("#bankToolbar").addEventListener("click", handleBankToolbar);
   $("#bankToolbar").addEventListener("input", handleBankSearch);
 
-  // 收藏按钮点击
-  $("#quizCard").addEventListener("click", handleBookmarkClick);
+  // 使用事件委托处理答题卡片内的按钮点击
+  $("#quizCard").addEventListener("click", (event) => {
+    const target = event.target;
+    if (target.id === "submitBtn") submitAnswer();
+    if (target.id === "prevBtn") prevQuestion();
+    if (target.id === "nextBtn") nextQuestion();
+    if (target.closest("[data-bookmark]")) handleBookmarkClick(event);
+  });
 
   // 刷题模式切换
   document.querySelectorAll("input[name='practiceMode']").forEach((radio) => {
