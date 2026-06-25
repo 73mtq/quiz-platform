@@ -123,29 +123,50 @@ async function deleteCourse() {
 }
 
 async function nextQuestion() {
-  // 记录历史（在服务端响应前记录，确保能回退）
   const course = activeCourse();
   const prevId = course.practice.currentQuestionId;
 
-  // 统一由服务端管理 remainingIds 和 currentQuestionId，避免前端/服务端状态不同步
-  runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
-  const serverCourse = runtime.state?.courses?.find((c) => c.id === course.id);
-
-  // 记录历史（只有在服务端成功返回后才记录）
-  if (prevId && serverCourse) {
-    runtime.questionHistory.push(prevId);
+  if (!course.practice.remainingIds.length) {
+    // 题目用完了，需要重新洗牌 —— 必须等服务端返回新的 remainingIds
+    runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
+    clearCurrentAnswer();
+    updatePracticeOnly();
+    updatePrevBtn();
+    return;
   }
 
+  // 记录历史
+  if (prevId) runtime.questionHistory.push(prevId);
+
+  // 乐观更新：本地立即切换题目
+  course.practice.currentQuestionId = course.practice.remainingIds.shift();
+  course.practice.lastAnswer = null;
   clearCurrentAnswer();
   updatePracticeOnly();
   updatePrevBtn();
+
+  // 后台同步服务端（只同步统计数据，不同步 remainingIds）
+  api.nextQuestion(runtime.practiceMode, runtime.practiceCount).then((state) => {
+    const serverCourse = state?.courses?.find((c) => c.id === activeCourse()?.id);
+    if (!serverCourse) return;
+    const localCourse = activeCourse();
+    // 只同步统计数据，不同步 remainingIds（前端已管理）
+    localCourse.practice.roundNo = serverCourse.practice.roundNo;
+    localCourse.practice.answeredInRound = serverCourse.practice.answeredInRound;
+    localCourse.practice.correctInRound = serverCourse.practice.correctInRound;
+    localCourse.practice.totalAnswered = serverCourse.practice.totalAnswered;
+    localCourse.practice.totalCorrect = serverCourse.practice.totalCorrect;
+  }).catch(() => {});
 }
 
 function prevQuestion() {
   if (!runtime.questionHistory.length) return;
   const course = activeCourse();
   const prevId = runtime.questionHistory.pop();
-  // 只修改 currentQuestionId，不修改 remainingIds（由服务端管理）
+  // 把当前题放回 remainingIds 头部
+  if (course.practice.currentQuestionId) {
+    course.practice.remainingIds.unshift(course.practice.currentQuestionId);
+  }
   course.practice.currentQuestionId = prevId;
   course.practice.lastAnswer = null;
   clearCurrentAnswer();
