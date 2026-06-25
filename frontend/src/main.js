@@ -585,6 +585,14 @@ try {
   runtime.state = await api.state();
   bind();
 
+  // 恢复上次答题状态
+  const course = activeCourse();
+  if (course.practice.lastAnswer) {
+    runtime.answerFeedback = course.practice.lastAnswer;
+    runtime.selectedAnswers = course.practice.lastAnswer.selectedAnswers || [];
+    runtime.submittedQuestionId = course.practice.lastAnswer.questionId;
+  }
+
   // 初始化刷题模式 UI
   const modeRadio = document.querySelector(`input[name='practiceMode'][value='${runtime.practiceMode}']`);
   if (modeRadio) modeRadio.checked = true;
