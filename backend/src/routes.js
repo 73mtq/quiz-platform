@@ -238,33 +238,6 @@ async function handleApi(req, res, url, repository, aiService) {
       return;
     }
 
-    // 一次性数据修复：去重选择题答案 key（如 ["A","A"] → ["A"]）
-    if (req.method === "POST" && url.pathname === "/api/admin/fix-duplicate-answers") {
-      const state = await repository.update((draft) => {
-        let fixCount = 0;
-        for (const course of draft.courses) {
-          for (const q of course.questions) {
-            if (q.type === "choice" && q.answer && q.answer.length > 1) {
-              const unique = [...new Set(q.answer)];
-              if (unique.length !== q.answer.length) {
-                q.answer = unique;
-                fixCount++;
-              }
-            }
-          }
-        }
-      });
-      // 统计修复后的多选题数量
-      let multiCount = 0;
-      for (const course of state.courses) {
-        for (const q of course.questions) {
-          if (q.answer && q.answer.length > 1) multiCount++;
-        }
-      }
-      sendJson(res, 200, { message: "修复完成", multiCount, courseCount: state.courses.length });
-      return;
-    }
-
     sendJson(res, 404, { error: "API not found" });
   } catch (error) {
     sendJson(res, 500, { error: error.message || "服务器错误" });
