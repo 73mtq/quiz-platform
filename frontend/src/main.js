@@ -25,49 +25,81 @@ function bind() {
     });
   });
 
-  $("#sampleBtn").addEventListener("click", () => { $("#sourceText").value = sample; });
-  $("#showAnswerToggle").checked = settings.showAnswer;
-  $("#showExplanationToggle").checked = settings.showExplanation;
-  $("#autoNextToggle").checked = settings.autoNext;
-  $("#shuffleOptionsToggle").checked = settings.shuffleOptions;
-  $("#showAnswerToggle").addEventListener("change", (event) => {
-    settings.showAnswer = event.target.checked;
-    persistFeedbackSettings();
-    renderApp();
-  });
-  $("#showExplanationToggle").addEventListener("change", (event) => {
-    settings.showExplanation = event.target.checked;
-    persistFeedbackSettings();
-    renderApp();
-  });
-  $("#autoNextToggle").addEventListener("change", (event) => {
-    settings.autoNext = event.target.checked;
-    persistFeedbackSettings();
-  });
-  $("#shuffleOptionsToggle").addEventListener("change", (event) => {
-    settings.shuffleOptions = event.target.checked;
-    persistFeedbackSettings();
-    renderApp();
-  });
-  $("#importTextBtn").addEventListener("click", importText);
-  $("#aiBtn").addEventListener("click", recognizeImage);
-  $("#courseSelect").addEventListener("change", setActiveCourse);
-  $("#addCourseBtn").addEventListener("click", addCourse);
-  $("#deleteCourseBtn").addEventListener("click", deleteCourse);
-  $("#resetRoundBtn").addEventListener("click", resetRound);
-  $("#bankList").addEventListener("click", deleteQuestion);
-  $("#bankList").addEventListener("click", handleBankActions);
-  $("#bankToolbar").addEventListener("click", handleBankToolbar);
-  $("#bankToolbar").addEventListener("input", handleBankSearch);
+  const sampleBtn = $("#sampleBtn");
+  if (sampleBtn) sampleBtn.addEventListener("click", () => { $("#sourceText").value = sample; });
+
+  const showAnswerToggle = $("#showAnswerToggle");
+  const showExplanationToggle = $("#showExplanationToggle");
+  const autoNextToggle = $("#autoNextToggle");
+  const shuffleOptionsToggle = $("#shuffleOptionsToggle");
+
+  if (showAnswerToggle) {
+    showAnswerToggle.checked = settings.showAnswer;
+    showAnswerToggle.addEventListener("change", (event) => {
+      settings.showAnswer = event.target.checked;
+      persistFeedbackSettings();
+      renderApp();
+    });
+  }
+  if (showExplanationToggle) {
+    showExplanationToggle.checked = settings.showExplanation;
+    showExplanationToggle.addEventListener("change", (event) => {
+      settings.showExplanation = event.target.checked;
+      persistFeedbackSettings();
+      renderApp();
+    });
+  }
+  if (autoNextToggle) {
+    autoNextToggle.checked = settings.autoNext;
+    autoNextToggle.addEventListener("change", (event) => {
+      settings.autoNext = event.target.checked;
+      persistFeedbackSettings();
+    });
+  }
+  if (shuffleOptionsToggle) {
+    shuffleOptionsToggle.checked = settings.shuffleOptions;
+    shuffleOptionsToggle.addEventListener("change", (event) => {
+      settings.shuffleOptions = event.target.checked;
+      persistFeedbackSettings();
+      renderApp();
+    });
+  }
+
+  const importTextBtn = $("#importTextBtn");
+  const aiBtn = $("#aiBtn");
+  const courseSelect = $("#courseSelect");
+  const addCourseBtn = $("#addCourseBtn");
+  const deleteCourseBtn = $("#deleteCourseBtn");
+  const resetRoundBtn = $("#resetRoundBtn");
+  const bankList = $("#bankList");
+  const bankToolbar = $("#bankToolbar");
+  const quizCard = $("#quizCard");
+
+  if (importTextBtn) importTextBtn.addEventListener("click", importText);
+  if (aiBtn) aiBtn.addEventListener("click", recognizeImage);
+  if (courseSelect) courseSelect.addEventListener("change", setActiveCourse);
+  if (addCourseBtn) addCourseBtn.addEventListener("click", addCourse);
+  if (deleteCourseBtn) deleteCourseBtn.addEventListener("click", deleteCourse);
+  if (resetRoundBtn) resetRoundBtn.addEventListener("click", resetRound);
+  if (bankList) {
+    bankList.addEventListener("click", deleteQuestion);
+    bankList.addEventListener("click", handleBankActions);
+  }
+  if (bankToolbar) {
+    bankToolbar.addEventListener("click", handleBankToolbar);
+    bankToolbar.addEventListener("input", handleBankSearch);
+  }
 
   // 使用事件委托处理答题卡片内的按钮点击
-  $("#quizCard").addEventListener("click", (event) => {
-    const target = event.target;
-    if (target.id === "submitBtn") submitAnswer();
-    if (target.id === "prevBtn") prevQuestion();
-    if (target.id === "nextBtn") nextQuestion();
-    if (target.closest("[data-bookmark]")) handleBookmarkClick(event);
-  });
+  if (quizCard) {
+    quizCard.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target.id === "submitBtn") submitAnswer();
+      if (target.id === "prevBtn") prevQuestion();
+      if (target.id === "nextBtn") nextQuestion();
+      if (target.closest("[data-bookmark]")) handleBookmarkClick(event);
+    });
+  }
 
   // 刷题模式切换
   document.querySelectorAll("input[name='practiceMode']").forEach((radio) => {
