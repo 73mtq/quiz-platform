@@ -123,47 +123,29 @@ async function deleteCourse() {
 }
 
 async function nextQuestion() {
-  // 乐观更新：本地立即切换题目
+  // 记录历史（在服务端响应前记录，确保能回退）
   const course = activeCourse();
   const prevId = course.practice.currentQuestionId;
-  if (!course.practice.remainingIds.length) {
-    // 题目用完了，需要重新洗牌 —— 这种情况必须等服务端
-    runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
-    clearCurrentAnswer();
-    updatePracticeOnly();
-    updatePrevBtn();
-    return;
+
+  // 统一由服务端管理 remainingIds 和 currentQuestionId，避免前端/服务端状态不同步
+  runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
+  const serverCourse = runtime.state?.courses?.find((c) => c.id === course.id);
+
+  // 记录历史（只有在服务端成功返回后才记录）
+  if (prevId && serverCourse) {
+    runtime.questionHistory.push(prevId);
   }
 
-  // 记录历史
-  if (prevId) runtime.questionHistory.push(prevId);
-
-  // 本地立即切换
-  course.practice.currentQuestionId = course.practice.remainingIds.shift();
-  course.practice.lastAnswer = null;
   clearCurrentAnswer();
   updatePracticeOnly();
   updatePrevBtn();
-
-  // 后台同步服务端（只同步洗牌后的 remainingIds，不覆盖当前题目）
-  api.nextQuestion(runtime.practiceMode, runtime.practiceCount).then((state) => {
-    const serverCourse = state?.courses?.find((c) => c.id === activeCourse()?.id);
-    if (!serverCourse) return;
-    const localCourse = activeCourse();
-    // 同步 remainingIds（服务端已移除当前题），但保留本地 currentQuestionId
-    localCourse.practice.remainingIds = serverCourse.practice.remainingIds;
-    localCourse.practice.roundNo = serverCourse.practice.roundNo;
-  }).catch(() => {});
 }
 
 function prevQuestion() {
   if (!runtime.questionHistory.length) return;
   const course = activeCourse();
   const prevId = runtime.questionHistory.pop();
-  // 把当前题放回 remainingIds 头部
-  if (course.practice.currentQuestionId) {
-    course.practice.remainingIds.unshift(course.practice.currentQuestionId);
-  }
+  // 只修改 currentQuestionId，不修改 remainingIds（由服务端管理）
   course.practice.currentQuestionId = prevId;
   course.practice.lastAnswer = null;
   clearCurrentAnswer();
@@ -228,13 +210,17 @@ async function submitAnswer() {
   updatePracticeOnly();
 
   // 后台同步服务端（不阻塞 UI）
-  // 只同步统计数据，不覆盖 currentQuestionId，防止答题后跳题
+  // 同步统计数据，不覆盖 currentQuestionId，防止答题后跳题
   api.submitAnswer(question.id, runtime.selectedAnswers).then((result) => {
     const serverCourse = result.state?.courses?.find((c) => c.id === activeCourse()?.id);
     if (!serverCourse) return;
     const localCourse = activeCourse();
+    // 同步所有统计数据（除 currentQuestionId 外）
     localCourse.practice.totalAnswered = serverCourse.practice.totalAnswered;
     localCourse.practice.totalCorrect = serverCourse.practice.totalCorrect;
+    localCourse.practice.answeredInRound = serverCourse.practice.answeredInRound;
+    localCourse.practice.correctInRound = serverCourse.practice.correctInRound;
+    // 同步题目级别的统计
     const serverQ = serverCourse.questions.find((q) => q.id === question.id);
     const localQ = localCourse.questions.find((q) => q.id === question.id);
     if (serverQ && localQ) {
