@@ -564,6 +564,12 @@ textarea::placeholder {
   margin-bottom: 14px;
 }
 
+.quiz-card .actions {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-light);
+}
+
 /* ---- 选项 — 悬浮滑入 + 触觉反馈 ---- */
 .option {
   display: flex;

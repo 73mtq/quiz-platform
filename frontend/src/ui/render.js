@@ -103,9 +103,23 @@ function renderPractice(course) {
   if (!question) {
     // 指定数量模式下刷完本轮显示完成提示
     if (mode === "count" && practice.answeredInRound > 0) {
-      $("#quizCard").innerHTML = `<p class="empty round-done">${practice.answeredInRound} 题已完成！正确率 ${rate(practice.correctInRound, practice.answeredInRound)}。点击"重置本轮"重新开始。</p>`;
+      $("#quizCard").innerHTML = `
+        <p class="empty round-done">${practice.answeredInRound} 题已完成！正确率 ${rate(practice.correctInRound, practice.answeredInRound)}。点击"重置本轮"重新开始。</p>
+        <div class="actions">
+          <button id="submitBtn">提交答案</button>
+          <button id="prevBtn" class="ghost" style="display:none">上一题</button>
+          <button id="nextBtn">下一题</button>
+        </div>
+      `;
     } else {
-      $("#quizCard").innerHTML = `<p class="empty">点击"下一题"开始。</p>`;
+      $("#quizCard").innerHTML = `
+        <p class="empty">点击"下一题"开始。</p>
+        <div class="actions">
+          <button id="submitBtn">提交答案</button>
+          <button id="prevBtn" class="ghost" style="display:none">上一题</button>
+          <button id="nextBtn">下一题</button>
+        </div>
+      `;
     }
     animateQuizCard();
     return;
@@ -151,6 +165,11 @@ function renderChoicePractice(question) {
       </label>
     `).join("")}
     <div id="answerResult">${renderAnswerFeedback(question)}</div>
+    <div class="actions">
+      <button id="submitBtn">提交答案</button>
+      <button id="prevBtn" class="ghost" style="display:none">上一题</button>
+      <button id="nextBtn">下一题</button>
+    </div>
   `;
   document.querySelectorAll("input[name='answer']").forEach((input) => {
     input.checked = runtime.selectedAnswers.includes(input.value);
@@ -189,6 +208,11 @@ function renderFillBlankPractice(question) {
     </div>
     <div class="fill-blank-area">${blanksHtml}</div>
     <div id="answerResult">${renderAnswerFeedback(question)}</div>
+    <div class="actions">
+      <button id="submitBtn">提交答案</button>
+      <button id="prevBtn" class="ghost" style="display:none">上一题</button>
+      <button id="nextBtn">下一题</button>
+    </div>
   `;
 
   if (!hasSubmitted) {
