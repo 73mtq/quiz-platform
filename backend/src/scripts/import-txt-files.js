@@ -122,10 +122,14 @@ function parseQuestionBlock(block) {
     }
   } else {
     // 选择题答案匹配
-    const isLetterAnswer = /^[A-Z](\s*[；;、]\s*[A-Z]|###\s*[A-Z])*$/i.test(answerText);
+    // 允许纯字母串（"ABC"）或带分隔符的字母串（"A B"/"A、B"/"A###B"/"A;B"），
+    // 旧的正则不允许无分隔符的连续字母，会让 "ABC" 走 else 分支被当作填空题
+    const isLetterAnswer = /^[A-Z\s；;、###]+$/i.test(answerText);
 
     if (isLetterAnswer) {
-      answer = answerText.split(/[；;、###\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+      // 用字符级匹配而不是分隔符 split —— 否则 "ABC" 这种无分隔符的连续字母
+      // 会被整体保留为 ["ABC"]，导致多选题被错误识别为单选
+      answer = (answerText.match(/[A-Z]/gi) || []).map(s => s.toUpperCase());
     } else {
       const answerTexts = answerText.split(/[；;、###]/).map(s => s.trim().toLowerCase()).filter(Boolean);
       for (const ansText of answerTexts) {
