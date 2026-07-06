@@ -139,9 +139,9 @@ async function handleApi(req, res, url, repository, aiService) {
         if (!course.practice.remainingIds.length) {
           let allIds;
           if (mode === "wrong") {
-            // 错题重做模式：只抽取答错且从未答对的题目
+            // 错题重做模式：与题库“只看错题”口径一致，抽取所有答错过的题目。
             allIds = course.questions
-              .filter((q) => (q.wrongCount || 0) > 0 && (q.correctCount || 0) === 0)
+              .filter((q) => (q.wrongCount || 0) > 0)
               .map((q) => q.id);
           } else {
             allIds = course.questions.map((question) => question.id);
@@ -243,9 +243,9 @@ async function handleApi(req, res, url, repository, aiService) {
 
         let allIds;
         if (mode === "wrong") {
-          // 错题重做模式：只抽取答错且从未答对的题目
+          // 错题重做模式：与题库“只看错题”口径一致，抽取所有答错过的题目。
           allIds = course.questions
-            .filter((q) => (q.wrongCount || 0) > 0 && (q.correctCount || 0) === 0)
+            .filter((q) => (q.wrongCount || 0) > 0)
             .map((q) => q.id);
         } else {
           allIds = course.questions.map((question) => question.id);

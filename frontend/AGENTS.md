@@ -77,7 +77,7 @@ frontend/
 
 - **三 Tab 切换**：`data-tab` 属性 + `.active` class；切到 bankPanel 时强制 `renderApp()` 重建
 - **填空题多空**：`question.answer[i]` 与输入框下标一一对应；分隔符 `；;|、` 任意一种
-- **错题重做定义**：服务端 `wrongCount > 0 && correctCount === 0` —— 答错过但从未答对过才算
+- **错题重做定义**：服务端 `wrongCount > 0` —— 题库“只看错题”和“错题重做”保持同一口径
 - **乐观更新 + 统计字段同步**：`nextQuestion` / `submitAnswer` 后台 `.then` 只同步 `roundNo` / `answeredInRound` / `correctInRound` / `totalAnswered` / `totalCorrect` / `wrongCount` / `correctCount`，不覆盖 `currentQuestionId` 和 `remainingIds`
 - **OCR 容错正则链**：`parser.js:normalize` 做全角→半角 + 修 `PMoO|PmoO|PM0|Pwo` → `PMO` + 修 `汽车轮取` → `汽车轮胎`
 - **多答案排序比较**：`[...answer].sort()` 后逐位相等；大小写无关（先 `.toUpperCase()`）

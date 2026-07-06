@@ -73,7 +73,7 @@ backend/src/
 - **API 风格**：所有写操作都是 `POST + JSON body`，包括删除（`/api/courses/delete` 而非 DELETE）
 - **路径安全**：`serveStatic` 用 `path.relative` 校验 `..` 穿越
 - **状态机**：`practice` 子对象含 `mode` / `count` / `remainingIds` / `currentQuestionId` / `lastAnswer` / `roundNo` / 各种统计字段
-- **错题定义**：`wrongCount > 0 && correctCount === 0`（"错过但从未答对过"才算错题重做候选）
+- **错题定义**：`wrongCount > 0`（题库“只看错题”和“错题重做”保持同一口径）
 - **JSONB 单行**：SQL 仓库整 state 存一个 row，无 schema 演化问题
 
 ## NOTES
