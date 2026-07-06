@@ -8,6 +8,7 @@
  * 可选环境变量：
  *   RENDER_URL    默认 https://quiz-platform-fbxp.onrender.com
  *   WRAPPER_PATH  默认 D:\桌面\习思想\习思题库\ocs-answerer-wrapper.json
+ *   TARGET_COURSE 默认 习思想，设为空字符串可扫描全部课程
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -15,6 +16,7 @@ import { normalizeChoiceText, normalizeQuestion } from "../utils.js";
 
 const RENDER_URL = (process.env.RENDER_URL || "https://quiz-platform-fbxp.onrender.com").replace(/\/+$/, "");
 const WRAPPER_PATH = process.env.WRAPPER_PATH || "D:\\桌面\\习思想\\习思题库\\ocs-answerer-wrapper.json";
+const TARGET_COURSE = process.env.TARGET_COURSE === undefined ? "习思想" : process.env.TARGET_COURSE;
 const DRY_RUN = process.argv.includes("--dry-run");
 
 async function callApi(endpoint, body = null, method = "POST") {
@@ -109,6 +111,8 @@ function collectFixes(remoteState, indexes) {
   let choiceQuestionCount = 0;
 
   for (const course of remoteState.courses || []) {
+    if (TARGET_COURSE && course.name !== TARGET_COURSE) continue;
+
     for (const rawQuestion of course.questions || []) {
       if (rawQuestion.type === "fill-blank") continue;
       choiceQuestionCount += 1;
@@ -158,6 +162,7 @@ async function main() {
   console.log("=".repeat(80));
   console.log(`Target: ${RENDER_URL}`);
   console.log(`Wrapper: ${path.resolve(WRAPPER_PATH)}`);
+  console.log(`Course: ${TARGET_COURSE || "全部课程"}`);
   console.log(`Mode: ${DRY_RUN ? "DRY RUN" : "实际推送"}`);
 
   const bank = parseWrapperBank(WRAPPER_PATH);
