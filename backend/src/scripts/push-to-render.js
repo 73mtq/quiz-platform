@@ -35,16 +35,25 @@ async function callApi(endpoint, body = null, method = "POST") {
 function parseWrapperBank(filePath) {
   const wrapper = JSON.parse(fs.readFileSync(filePath, "utf8"));
   const handler = wrapper?.[0]?.handler || "";
-  const marker = "const bank = JSON.parse(\"";
-  const start = handler.indexOf(marker);
-  if (start === -1) throw new Error("未在 wrapper handler 中找到题库 JSON");
-  const from = start + marker.length;
-  const end = handler.indexOf("\");", from);
-  if (end === -1) throw new Error("wrapper handler 中的题库 JSON 未闭合");
+  const escapedJsonMarker = "const bank = JSON.parse(\"";
+  const escapedJsonStart = handler.indexOf(escapedJsonMarker);
+  if (escapedJsonStart !== -1) {
+    const from = escapedJsonStart + escapedJsonMarker.length;
+    const end = handler.indexOf("\");", from);
+    if (end === -1) throw new Error("wrapper handler 中的题库 JSON 未闭合");
 
-  const escapedJson = handler.slice(from, end);
-  const jsonText = JSON.parse(`"${escapedJson}"`);
-  return JSON.parse(jsonText);
+    const escapedJson = handler.slice(from, end);
+    const jsonText = JSON.parse(`"${escapedJson}"`);
+    return JSON.parse(jsonText);
+  }
+
+  const inlineMarker = "const bank =";
+  const inlineStart = handler.indexOf(inlineMarker);
+  if (inlineStart === -1) throw new Error("未在 wrapper handler 中找到题库 JSON");
+
+  const arrayStart = handler.indexOf("[", inlineStart + inlineMarker.length);
+  if (arrayStart === -1) throw new Error("wrapper handler 中未找到题库数组");
+  return JSON.parse(extractJsonArrayLiteral(handler, arrayStart));
 }
 
 function uniqueSetKey(values) {
@@ -61,6 +70,35 @@ function stemKey(value) {
 
 function fullQuestionKey(stem, options) {
   return `${stemKey(stem)}::${optionSetKey(options)}`;
+}
+
+function extractJsonArrayLiteral(text, startIndex) {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = startIndex; index < text.length; index += 1) {
+    const char = text[index];
+
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === "\"") inString = false;
+      continue;
+    }
+
+    if (char === "\"") {
+      inString = true;
+      continue;
+    }
+    if (char === "[") depth += 1;
+    if (char === "]") {
+      depth -= 1;
+      if (depth === 0) return text.slice(startIndex, index + 1);
+    }
+  }
+
+  throw new Error("wrapper handler 中的题库数组未闭合");
 }
 
 function buildWrapperIndexes(bank) {
@@ -86,10 +124,14 @@ function buildWrapperIndexes(bank) {
 }
 
 function resolveAnswerTexts(question, wrapperAnswers) {
-  return wrapperAnswers.map((answer) => {
+  const unmatched = [];
+  const answers = wrapperAnswers.map((answer) => {
     const matched = question.options.find((option) => normalizeChoiceText(option.text) === normalizeChoiceText(answer));
-    return matched ? matched.text : answer;
+    if (!matched) unmatched.push(answer);
+    return matched ? matched.text : "";
   }).filter(Boolean);
+
+  return { answers, unmatched };
 }
 
 function findWrapperCandidate(question, indexes) {
@@ -119,6 +161,7 @@ function collectFixes(remoteState, indexes) {
 
       const normalized = normalizeQuestion(rawQuestion);
       const answerLooksLegacy = (rawQuestion.answer || []).some((answer) =>
+        /^[A-H]$/i.test(String(answer || "").trim()) &&
         rawQuestion.options?.some((option) => String(option.key || "").toUpperCase() === String(answer || "").toUpperCase())
       );
       if (answerLooksLegacy) legacyAnswerCount += 1;
@@ -138,8 +181,18 @@ function collectFixes(remoteState, indexes) {
 
       const currentKey = uniqueSetKey(normalized.answer);
       const candidate = candidates.find((item) => uniqueSetKey(item.answerTexts) !== currentKey) || candidates[0];
-      const nextAnswer = resolveAnswerTexts(normalized, candidate.answerTexts);
+      const { answers: nextAnswer, unmatched } = resolveAnswerTexts(normalized, candidate.answerTexts);
       const nextKey = uniqueSetKey(nextAnswer);
+      if (unmatched.length) {
+        if (skipped.length < 10) {
+          skipped.push({
+            course: course.name,
+            reason: `答案无法绑定到当前选项内容: ${unmatched.join("、")}`,
+            stem: normalized.stem.slice(0, 80)
+          });
+        }
+        continue;
+      }
       if (!nextKey || nextKey === currentKey) continue;
 
       fixes.push({
@@ -154,6 +207,21 @@ function collectFixes(remoteState, indexes) {
   }
 
   return { fixes, skipped, matched, legacyAnswerCount, choiceQuestionCount };
+}
+
+async function activateTargetCourse(remoteState) {
+  if (!TARGET_COURSE) return remoteState;
+
+  const target = (remoteState.courses || []).find((course) => course.name === TARGET_COURSE);
+  if (!target) throw new Error(`Render 上找不到目标课程: ${TARGET_COURSE}`);
+  if (remoteState.activeCourseId === target.id) return remoteState;
+
+  const activated = await callApi("/api/courses/active", { courseId: target.id });
+  if (!activated.ok) {
+    throw new Error(`切换目标课程失败: status=${activated.status} body=${JSON.stringify(activated.data)}`);
+  }
+  console.log(`已切换线上活跃课程：${TARGET_COURSE}`);
+  return activated.data;
 }
 
 async function main() {
@@ -177,9 +245,10 @@ async function main() {
   const remoteCount = (remote.data.courses || []).reduce((sum, course) => sum + (course.questions || []).length, 0);
   console.log(`Render：${remote.data.courses.length} 门课程，${remoteCount} 题`);
 
-  const { fixes, skipped, matched, legacyAnswerCount, choiceQuestionCount } = collectFixes(remote.data, indexes);
+  const remoteState = DRY_RUN ? remote.data : await activateTargetCourse(remote.data);
+  const { fixes, skipped, matched, legacyAnswerCount, choiceQuestionCount } = collectFixes(remoteState, indexes);
   console.log(`匹配完整题库：${matched} 题`);
-  console.log(`疑似仍按字母返回答案：${legacyAnswerCount}/${choiceQuestionCount} 题`);
+  console.log(`疑似仍按 A-H 字母返回答案：${legacyAnswerCount}/${choiceQuestionCount} 题`);
   console.log(`需要修复答案内容：${fixes.length} 题`);
 
   if (fixes.length) {

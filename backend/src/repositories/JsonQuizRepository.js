@@ -94,9 +94,9 @@ export class JsonQuizRepository {
   }
 
   updateQuestion(state, questionId, data) {
-    const course = this.getActiveCourse(state);
+    const course = state.courses.find((item) => item.questions.some((q) => q.id === questionId));
+    if (!course) return null;
     const question = course.questions.find((q) => q.id === questionId);
-    if (!question) return null;
 
     const merged = { ...question, id: questionId, createdAt: question.createdAt };
     if (data.type !== undefined) merged.type = data.type;
