@@ -54,6 +54,63 @@ export function getChoiceAnswerTexts(question, answers = question.answer || []) 
   return result;
 }
 
+export function normalizeReviewState(review = {}) {
+  return {
+    lastAnsweredAt: review.lastAnsweredAt || "",
+    lastWrongAt: review.lastWrongAt || "",
+    lastCorrectAt: review.lastCorrectAt || "",
+    consecutiveCorrect: Number(review.consecutiveCorrect) || 0,
+    masteredAt: review.masteredAt || "",
+    lastSelectedAnswers: Array.isArray(review.lastSelectedAnswers)
+      ? review.lastSelectedAnswers.map((item) => String(item))
+      : []
+  };
+}
+
+export function isPendingWrongQuestion(question) {
+  return (question.wrongCount || 0) > 0 && !question.review?.masteredAt;
+}
+
+export function reviewPriority(question) {
+  const wrong = question.wrongCount || 0;
+  const correct = question.correctCount || 0;
+  const answerCount = (question.answer || []).length;
+  const lastWrongAt = Date.parse(question.review?.lastWrongAt || "") || 0;
+  const recency = lastWrongAt ? Math.min(30, Math.floor((Date.now() - lastWrongAt) / 86400000)) : 30;
+
+  return (wrong * 100)
+    + (correct ? 0 : 40)
+    + (answerCount > 1 ? 24 + answerCount : 0)
+    + (30 - recency);
+}
+
+export function getWrongPracticeQuestions(questions) {
+  return questions
+    .filter(isPendingWrongQuestion)
+    .sort((a, b) => reviewPriority(b) - reviewPriority(a));
+}
+
+export function updateQuestionReview(question, { correct, selectedAnswers, answeredAt = new Date().toISOString() }) {
+  const review = normalizeReviewState(question.review);
+  review.lastAnsweredAt = answeredAt;
+  review.lastSelectedAnswers = (selectedAnswers || []).map((item) => String(item));
+
+  if (correct) {
+    review.lastCorrectAt = answeredAt;
+    review.consecutiveCorrect += 1;
+    if ((question.wrongCount || 0) > 0 && review.consecutiveCorrect >= 2) {
+      review.masteredAt = review.masteredAt || answeredAt;
+    }
+  } else {
+    review.lastWrongAt = answeredAt;
+    review.consecutiveCorrect = 0;
+    review.masteredAt = "";
+  }
+
+  question.review = review;
+  return review;
+}
+
 export function areChoiceAnswerSetsEqual(question, selectedAnswers, correctAnswers = question.answer || []) {
   const selected = getChoiceAnswerTexts(question, selectedAnswers).map(normalizeChoiceText).sort();
   const correct = getChoiceAnswerTexts(question, correctAnswers).map(normalizeChoiceText).sort();
@@ -87,6 +144,8 @@ export function normalizeQuestion(question) {
     explanation: String(question.explanation || "").trim(),
     wrongCount: Number(question.wrongCount) || 0,
     correctCount: Number(question.correctCount) || 0,
+    bookmarked: Boolean(question.bookmarked),
+    review: normalizeReviewState(question.review),
     createdAt: question.createdAt || new Date().toISOString()
   };
   if (question.updatedAt) normalized.updatedAt = question.updatedAt;

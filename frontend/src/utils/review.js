@@ -87,16 +87,18 @@ const patternDefinitions = [
 export function analyzeReview(course) {
   const questions = course?.questions || [];
   const wrongQuestions = questions.filter((question) => (question.wrongCount || 0) > 0);
+  const pendingWrongQuestions = wrongQuestions.filter(isPendingWrongQuestion);
+  const masteredWrongQuestions = wrongQuestions.filter(isMasteredWrongQuestion);
   const answeredQuestions = questions.filter((question) => (question.wrongCount || 0) > 0 || (question.correctCount || 0) > 0);
   const correctAttempts = questions.reduce((sum, question) => sum + (question.correctCount || 0), 0);
   const wrongAttempts = questions.reduce((sum, question) => sum + (question.wrongCount || 0), 0);
-  const repeatedWrong = wrongQuestions.filter((question) => (question.wrongCount || 0) >= 2);
-  const multiWrong = wrongQuestions.filter((question) => (question.answer || []).length > 1);
+  const repeatedWrong = pendingWrongQuestions.filter((question) => (question.wrongCount || 0) >= 2);
+  const multiWrong = pendingWrongQuestions.filter((question) => (question.answer || []).length > 1);
   const recoveredWrong = wrongQuestions.filter((question) => (question.correctCount || 0) > 0);
 
   const categories = categoryDefinitions
     .map((definition) => {
-      const items = wrongQuestions.filter((question) => includesAny(question, definition.keywords));
+      const items = pendingWrongQuestions.filter((question) => includesAny(question, definition.keywords));
       return {
         name: definition.name,
         count: items.length,
@@ -111,7 +113,7 @@ export function analyzeReview(course) {
 
   const patterns = patternDefinitions
     .map((definition) => {
-      const items = wrongQuestions.filter(definition.test);
+      const items = pendingWrongQuestions.filter(definition.test);
       return {
         name: definition.name,
         count: items.length,
@@ -122,13 +124,15 @@ export function analyzeReview(course) {
     .filter((item) => item.count > 0)
     .sort((a, b) => b.count - a.count || b.attempts - a.attempts);
 
-  const priorityQuestions = topQuestions(wrongQuestions, 12);
-  const memoryCards = buildMemoryCards({ wrongQuestions, repeatedWrong, multiWrong, patterns, categories });
+  const priorityQuestions = topQuestions(pendingWrongQuestions, 12);
+  const memoryCards = buildMemoryCards({ wrongQuestions: pendingWrongQuestions, repeatedWrong, multiWrong, patterns, categories });
 
   return {
     totalQuestions: questions.length,
     answeredQuestions: answeredQuestions.length,
     wrongQuestions: wrongQuestions.length,
+    pendingWrongQuestions: pendingWrongQuestions.length,
+    masteredWrongQuestions: masteredWrongQuestions.length,
     repeatedWrong: repeatedWrong.length,
     multiWrong: multiWrong.length,
     recoveredWrong: recoveredWrong.length,
@@ -146,8 +150,11 @@ export function getQuestionTags(question) {
   const tags = [];
   const wrongCount = question.wrongCount || 0;
   const correctCount = question.correctCount || 0;
+  const consecutiveCorrect = question.review?.consecutiveCorrect || 0;
   if (wrongCount > 0) tags.push(`错 ${wrongCount}`);
   if (correctCount > 0) tags.push(`对 ${correctCount}`);
+  if (isMasteredWrongQuestion(question)) tags.push("已掌握");
+  if (isPendingWrongQuestion(question)) tags.push(`待清 ${Math.min(consecutiveCorrect, 2)}/2`);
   if ((question.answer || []).length > 1) tags.push("多选");
   if ((question.answer || []).some((item) => item === "对" || item === "错")) tags.push("判断");
   for (const pattern of patternDefinitions) {
@@ -158,21 +165,34 @@ export function getQuestionTags(question) {
   return [...new Set(tags)];
 }
 
+export function isPendingWrongQuestion(question) {
+  return (question.wrongCount || 0) > 0 && !question.review?.masteredAt;
+}
+
+export function isMasteredWrongQuestion(question) {
+  return (question.wrongCount || 0) > 0 && Boolean(question.review?.masteredAt);
+}
+
+export function sortWrongQuestions(questions) {
+  return [...questions].sort((a, b) => questionPriority(b) - questionPriority(a));
+}
+
 function topQuestions(questions, limit) {
-  return [...questions]
-    .sort((a, b) => questionPriority(b) - questionPriority(a))
-    .slice(0, limit);
+  return sortWrongQuestions(questions).slice(0, limit);
 }
 
 function questionPriority(question) {
   const wrong = question.wrongCount || 0;
   const correct = question.correctCount || 0;
   const answerCount = (question.answer || []).length;
+  const lastWrongAt = Date.parse(question.review?.lastWrongAt || "") || 0;
+  const recencyDays = lastWrongAt ? Math.min(30, Math.floor((Date.now() - lastWrongAt) / 86400000)) : 30;
   const repeatWeight = wrong * 100;
-  const unresolvedWeight = correct ? 0 : 24;
-  const multiWeight = answerCount > 1 ? 18 + answerCount : 0;
+  const unresolvedWeight = correct ? 0 : 40;
+  const multiWeight = answerCount > 1 ? 24 + answerCount : 0;
+  const recencyWeight = 30 - recencyDays;
   const patternWeight = patternDefinitions.reduce((sum, pattern) => sum + (pattern.test(question) ? 4 : 0), 0);
-  return repeatWeight + unresolvedWeight + multiWeight + patternWeight;
+  return repeatWeight + unresolvedWeight + multiWeight + recencyWeight + patternWeight;
 }
 
 function includesAny(question, keywords) {

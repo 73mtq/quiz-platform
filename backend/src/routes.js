@@ -5,10 +5,12 @@ import {
   areChoiceAnswerSetsEqual,
   createId,
   getChoiceAnswerTexts,
+  getWrongPracticeQuestions,
   normalizeChoiceText,
   normalizeQuestion,
   readBody,
   sendJson,
+  updateQuestionReview,
   validateQuestion
 } from "./utils.js";
 
@@ -148,10 +150,8 @@ async function handleApi(req, res, url, repository, aiService) {
         if (!course.practice.remainingIds.length) {
           let allIds;
           if (mode === "wrong") {
-            // 错题重做模式：与题库“只看错题”口径一致，抽取所有答错过的题目。
-            allIds = course.questions
-              .filter((q) => (q.wrongCount || 0) > 0)
-              .map((q) => q.id);
+            // 错题重做模式：只抽未连续答对 2 次的待清错题，并按冲刺优先级排序。
+            allIds = getWrongPracticeQuestions(course.questions).map((q) => q.id);
           } else {
             allIds = course.questions.map((question) => question.id);
           }
@@ -160,8 +160,10 @@ async function handleApi(req, res, url, repository, aiService) {
             // 指定数量模式：随机抽取 count 道题
             const shuffled = shuffle(allIds);
             course.practice.remainingIds = shuffled.slice(0, Math.min(count, shuffled.length));
+          } else if (mode === "wrong") {
+            course.practice.remainingIds = allIds;
           } else {
-            // 全部模式/错题模式：打乱所有题目
+            // 全部模式：打乱所有题目
             course.practice.remainingIds = shuffle(allIds);
           }
           course.practice.roundNo += course.practice.totalAnswered ? 1 : 0;
@@ -211,6 +213,7 @@ async function handleApi(req, res, url, repository, aiService) {
         }
         course.practice.answeredInRound += 1;
         course.practice.totalAnswered += 1;
+        const answeredAt = new Date().toISOString();
         if (correct) {
           course.practice.correctInRound += 1;
           course.practice.totalCorrect += 1;
@@ -218,12 +221,13 @@ async function handleApi(req, res, url, repository, aiService) {
         } else {
           question.wrongCount = (question.wrongCount || 0) + 1;
         }
+        updateQuestionReview(question, { correct, selectedAnswers, answeredAt });
         course.practice.lastAnswer = {
           id: createId("answer"),
           questionId: question.id,
           selectedAnswers,
           correct,
-          answeredAt: new Date().toISOString()
+          answeredAt
         };
         answerResult = {
           accepted: true,
@@ -248,10 +252,8 @@ async function handleApi(req, res, url, repository, aiService) {
 
         let allIds;
         if (mode === "wrong") {
-          // 错题重做模式：与题库“只看错题”口径一致，抽取所有答错过的题目。
-          allIds = course.questions
-            .filter((q) => (q.wrongCount || 0) > 0)
-            .map((q) => q.id);
+          // 错题重做模式：只抽未连续答对 2 次的待清错题，并按冲刺优先级排序。
+          allIds = getWrongPracticeQuestions(course.questions).map((q) => q.id);
         } else {
           allIds = course.questions.map((question) => question.id);
         }
@@ -259,6 +261,8 @@ async function handleApi(req, res, url, repository, aiService) {
         if (mode === "count" && count > 0) {
           const shuffled = shuffle(allIds);
           course.practice.remainingIds = shuffled.slice(0, Math.min(count, shuffled.length));
+        } else if (mode === "wrong") {
+          course.practice.remainingIds = allIds;
         } else {
           course.practice.remainingIds = shuffle(allIds);
         }

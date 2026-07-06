@@ -1,7 +1,7 @@
 import { activeCourse, currentQuestion, runtime, settings } from "../state/appState.js";
 import { getChoiceAnswerTexts, hasChoiceAnswer, normalizeChoiceText } from "../utils/answers.js";
 import { escapeHtml, rate } from "../utils/format.js";
-import { analyzeReview, getQuestionTags } from "../utils/review.js";
+import { analyzeReview, getQuestionTags, isMasteredWrongQuestion, isPendingWrongQuestion, sortWrongQuestions } from "../utils/review.js";
 
 /** 随机打乱数组（Fisher-Yates 洗牌算法） */
 function shuffleArray(arr) {
@@ -108,6 +108,10 @@ function renderPractice(course) {
     // 指定数量模式下刷完本轮显示完成提示
     if (mode === "count" && practice.answeredInRound > 0) {
       $("#quizCard").innerHTML = `<p class="empty round-done">${practice.answeredInRound} 题已完成！正确率 ${rate(practice.correctInRound, practice.answeredInRound)}。点击"重置本轮"重新开始。</p>`;
+    } else if (mode === "wrong" && practice.answeredInRound > 0) {
+      $("#quizCard").innerHTML = `<p class="empty round-done">本轮待清错题已完成。连续答对 2 次的题会标记为已掌握。</p>`;
+    } else if (mode === "wrong") {
+      $("#quizCard").innerHTML = `<p class="empty">暂无待清错题。答错的题会进入这里，连续答对 2 次后自动清出。</p>`;
     } else {
       $("#quizCard").innerHTML = `<p class="empty">点击"下一题"开始。</p>`;
     }
@@ -262,46 +266,49 @@ function renderReview(course) {
 
   target.innerHTML = `
     <div class="review-summary-grid">
-      ${renderReviewMetric("错题", review.wrongQuestions, `占题库 ${Math.round((review.wrongQuestions / review.totalQuestions) * 100)}%`, "danger")}
+      ${renderReviewMetric("待清错题", review.pendingWrongQuestions, `历史错题 ${review.wrongQuestions} 道`, review.pendingWrongQuestions ? "danger" : "")}
       ${renderReviewMetric("反复错", review.repeatedWrong, "错 2 次以上", review.repeatedWrong ? "danger" : "")}
       ${renderReviewMetric("多选错题", review.multiWrong, "优先防漏选", review.multiWrong ? "gold" : "")}
-      ${renderReviewMetric("累计正确率", `${review.accuracy}%`, `${review.correctAttempts}/${review.correctAttempts + review.wrongAttempts}`)}
+      ${renderReviewMetric("已掌握", review.masteredWrongQuestions, "连续答对 2 次")}
     </div>
-    <section class="review-section">
+    ${review.pendingWrongQuestions ? `
+      <section class="review-section">
       <h3>今日复习顺序</h3>
       <div class="review-plan">
-        ${renderPlanStep("1", "先刷反复错题", `${review.repeatedWrong || review.wrongQuestions} 道优先`, "把最顽固的混淆点先清掉。")}
+        ${renderPlanStep("1", "先刷反复错题", `${review.repeatedWrong || review.pendingWrongQuestions} 道优先`, "把最顽固的混淆点先清掉。")}
         ${renderPlanStep("2", "再刷多选错题", `${review.multiWrong} 道`, "按完整并列组记，避免漏选。")}
-        ${renderPlanStep("3", "最后刷全部错题", `${review.wrongQuestions} 道`, "用错题重做模式随机巩固。")}
+        ${renderPlanStep("3", "最后刷其它待清错题", `${review.pendingWrongQuestions} 道`, "每题连续答对 2 次后自动标记已掌握。")}
       </div>
-    </section>
+    </section>` : `
+      <p class="empty">历史错题都已掌握。后续答错的新题会重新进入待清列表。</p>
+    `}
     <section class="review-section">
       <h3>错题类型</h3>
       <div class="review-patterns">
-        ${review.patterns.slice(0, 5).map(renderPattern).join("")}
+        ${review.patterns.length ? review.patterns.slice(0, 5).map(renderPattern).join("") : '<p class="empty">暂无待清错题类型。</p>'}
       </div>
     </section>
     <section class="review-section">
       <h3>薄弱板块</h3>
       <div class="review-categories">
-        ${review.categories.slice(0, 6).map(renderCategory).join("")}
+        ${review.categories.length ? review.categories.slice(0, 6).map(renderCategory).join("") : '<p class="empty">暂无待清薄弱板块。</p>'}
       </div>
     </section>
     <section class="review-section">
       <h3>记忆提示</h3>
       <div class="memory-list">
-        ${review.memoryCards.map((card) => `
+        ${review.memoryCards.length ? review.memoryCards.map((card) => `
           <article class="memory-item">
             <strong>${escapeHtml(card.title)}</strong>
             <p>${escapeHtml(card.body)}</p>
           </article>
-        `).join("")}
+        `).join("") : '<p class="empty">待清错题清空后，保持定期抽练即可。</p>'}
       </div>
     </section>
     <section class="review-section">
       <h3>优先错题</h3>
       <div class="priority-list">
-        ${review.priorityQuestions.map(renderPriorityQuestion).join("")}
+        ${review.priorityQuestions.length ? review.priorityQuestions.map(renderPriorityQuestion).join("") : '<p class="empty">暂无待清错题。</p>'}
       </div>
     </section>
   `;
@@ -353,14 +360,23 @@ function renderCategory(category) {
   `;
 }
 
+function renderAnswerText(question, answers = question.answer || []) {
+  if (question.type === "fill-blank") return (answers || []).join("、") || "未填写";
+  return getChoiceAnswerTexts(question, answers || []).join("、") || "未选择";
+}
+
 function renderPriorityQuestion(question, index) {
   const tags = getQuestionTags(question);
+  const progress = Math.min(question.review?.consecutiveCorrect || 0, 2);
+  const lastSelected = question.review?.lastSelectedAnswers || [];
   return `
     <article class="priority-question">
       <div class="priority-rank">${index + 1}</div>
       <div>
         <h4>${escapeHtml(question.stem)}</h4>
-        <p>答案：${escapeHtml((question.answer || []).join("、"))}</p>
+        <p>连对进度：${progress}/2</p>
+        ${lastSelected.length ? `<p>上次选择：${escapeHtml(renderAnswerText(question, lastSelected))}</p>` : ""}
+        <p>正确答案：${escapeHtml(renderAnswerText(question))}</p>
         <div class="priority-tags">
           ${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}
         </div>
@@ -375,12 +391,13 @@ function renderBank(course) {
   if (!bankPanel || !bankPanel.classList.contains("active")) return;
 
   const wrongCount = course.questions.filter((q) => (q.wrongCount || 0) > 0).length;
+  const pendingWrongCount = course.questions.filter(isPendingWrongQuestion).length;
   const bookmarkedCount = course.questions.filter((q) => q.bookmarked).length;
   const bankToolbar = $("#bankToolbar");
   if (bankToolbar) {
     bankToolbar.innerHTML = `
       <span class="bank-count">共 ${course.questions.length} 题</span>
-      <button id="toggleWrongOnlyBtn" class="ghost ${runtime.bankShowWrongOnly ? "active-filter" : ""}">只看错题（${wrongCount}）</button>
+      <button id="toggleWrongOnlyBtn" class="ghost ${runtime.bankShowWrongOnly ? "active-filter" : ""}">只看错题（待清 ${pendingWrongCount} / 历史 ${wrongCount}）</button>
       <button id="toggleBookmarkedOnlyBtn" class="ghost ${runtime.bankShowBookmarkedOnly ? "active-filter" : ""}">只看收藏（${bookmarkedCount}）</button>
       <input type="text" id="bankSearch" placeholder="搜索题干关键词..." value="${runtime.bankSearch || ""}">
       <button id="createQuestionBtn" class="ghost">手动出题</button>
@@ -393,7 +410,10 @@ function renderBank(course) {
     : course.questions;
   if (runtime.bankShowWrongOnly) {
     filtered = filtered.filter((q) => (q.wrongCount || 0) > 0);
-    filtered = [...filtered].sort((a, b) => (b.wrongCount || 0) - (a.wrongCount || 0));
+    filtered = [
+      ...sortWrongQuestions(filtered.filter(isPendingWrongQuestion)),
+      ...sortWrongQuestions(filtered.filter(isMasteredWrongQuestion))
+    ];
   }
   if (runtime.bankShowBookmarkedOnly) {
     filtered = filtered.filter((q) => q.bookmarked);
@@ -418,19 +438,25 @@ function renderBankList(questions) {
     const typeTag = isFillBlank ? `<span class="tag-fill-blank">填空题</span>` : "";
     const wrongCount = question.wrongCount || 0;
     const correctCount = question.correctCount || 0;
+    const reviewTag = isMasteredWrongQuestion(question)
+      ? '<span class="stats-tag is-mastered">已掌握</span>'
+      : isPendingWrongQuestion(question)
+        ? `<span class="stats-tag is-pending">待清 ${Math.min(question.review?.consecutiveCorrect || 0, 2)}/2</span>`
+        : "";
     const statsTag = wrongCount > 0 || correctCount > 0
       ? `<span class="stats-tag">${wrongCount > 0 ? `错 ${wrongCount}` : ""}${wrongCount > 0 && correctCount > 0 ? " / " : ""}${correctCount > 0 ? `对 ${correctCount}` : ""}</span>`
       : "";
     return `
       <article class="bank-item">
         <div>
-          <h3>${index + 1}. ${escapeHtml(question.stem)} ${typeTag} ${statsTag}</h3>
+          <h3>${index + 1}. ${escapeHtml(question.stem)} ${typeTag} ${statsTag} ${reviewTag}</h3>
           ${isFillBlank ? "" : `
           <div class="bank-options">
             ${question.options.map((option) => `<p><b>${option.key}.</b> ${escapeHtml(option.text)}</p>`).join("")}
           </div>
           `}
-          <p>答案：${escapeHtml((isFillBlank ? question.answer : getChoiceAnswerTexts(question)).join("、"))}</p>
+          <p>答案：${escapeHtml(renderAnswerText(question))}</p>
+          ${question.review?.lastSelectedAnswers?.length ? `<p>上次选择：${escapeHtml(renderAnswerText(question, question.review.lastSelectedAnswers))}</p>` : ""}
           ${question.explanation ? `<p>解析：${escapeHtml(question.explanation)}</p>` : ""}
         </div>
         <div class="bank-actions">

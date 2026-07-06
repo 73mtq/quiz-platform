@@ -720,6 +720,16 @@ textarea::placeholder {
   vertical-align: middle;
 }
 
+.stats-tag.is-pending {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.stats-tag.is-mastered {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
 .tag-fill-blank {
   display: inline-block;
   margin-left: 5px;
