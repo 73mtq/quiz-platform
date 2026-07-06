@@ -21,8 +21,8 @@ function bind() {
       document.querySelectorAll(".tabs button,.panel").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       $(`#${button.dataset.tab}`).classList.add("active");
-      // 切换到题库时触发渲染（题库面板默认跳过渲染以提升性能）
-      if (button.dataset.tab === "bankPanel") renderApp();
+      // 切换到题库/复习时触发渲染（这些面板默认跳过渲染以提升性能）
+      if (button.dataset.tab === "bankPanel" || button.dataset.tab === "reviewPanel") renderApp();
     });
   });
 
@@ -74,6 +74,7 @@ function bind() {
   const resetRoundBtn = $("#resetRoundBtn");
   const bankList = $("#bankList");
   const bankToolbar = $("#bankToolbar");
+  const reviewPanel = $("#reviewPanel");
   const quizCard = $("#quizCard");
   const submitBtn = $("#submitBtn");
   const prevBtn = $("#prevBtn");
@@ -96,6 +97,9 @@ function bind() {
   if (bankToolbar) {
     bankToolbar.addEventListener("click", handleBankToolbar);
     bankToolbar.addEventListener("input", handleBankSearch);
+  }
+  if (reviewPanel) {
+    reviewPanel.addEventListener("click", handleReviewActions);
   }
 
   // 使用事件委托处理答题卡片内的收藏按钮点击
@@ -141,6 +145,14 @@ function bind() {
       }
     });
   }
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll(".tabs button,.panel").forEach((item) => item.classList.remove("active"));
+  const button = document.querySelector(`.tabs button[data-tab='${tabId}']`);
+  const panel = $(`#${tabId}`);
+  if (button) button.classList.add("active");
+  if (panel) panel.classList.add("active");
 }
 
 async function importText() {
@@ -323,6 +335,33 @@ async function resetRound() {
   runtime.questionHistory = [];
   renderApp();
   updatePrevBtn();
+}
+
+async function handleReviewActions(event) {
+  const action = event.target.closest("[data-review-action]")?.dataset.reviewAction;
+  if (!action) return;
+
+  if (action === "practice-wrong") {
+    runtime.practiceMode = "wrong";
+    localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
+    const modeRadio = document.querySelector("input[name='practiceMode'][value='wrong']");
+    if (modeRadio) modeRadio.checked = true;
+    runtime.state = await api.resetRound("wrong", runtime.practiceCount);
+    clearCurrentAnswer();
+    runtime.questionHistory = [];
+    switchTab("practicePanel");
+    renderApp();
+    updatePrevBtn();
+    return;
+  }
+
+  if (action === "open-wrong-bank") {
+    runtime.bankShowWrongOnly = true;
+    runtime.bankShowBookmarkedOnly = false;
+    runtime.bankSearch = "";
+    switchTab("bankPanel");
+    renderApp();
+  }
 }
 
 async function deleteQuestion(event) {

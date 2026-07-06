@@ -800,6 +800,205 @@ textarea::placeholder {
   text-align: center;
 }
 
+/* ---- 复习分析 ---- */
+.review-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.review-insights {
+  display: grid;
+  gap: 16px;
+}
+
+.review-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.review-metric {
+  min-height: 92px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.review-metric span,
+.review-metric small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-metric strong {
+  display: block;
+  margin: 4px 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1.1;
+  color: var(--ink);
+}
+
+.review-metric.is-danger strong {
+  color: var(--danger);
+}
+
+.review-metric.is-gold strong {
+  color: var(--gold);
+}
+
+.review-section {
+  display: grid;
+  gap: 8px;
+}
+
+.review-section h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+
+.review-plan {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.review-plan-step,
+.review-pattern,
+.review-category,
+.memory-item,
+.priority-question {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--paper);
+}
+
+.review-plan-step {
+  display: flex;
+  gap: 10px;
+  min-height: 118px;
+  padding: 12px;
+}
+
+.review-plan-step b,
+.priority-rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.review-plan-step strong,
+.review-category strong,
+.memory-item strong,
+.review-pattern strong {
+  display: block;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.review-plan-step span,
+.review-pattern span,
+.review-category span {
+  display: block;
+  margin-top: 2px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.review-plan-step p,
+.review-pattern p,
+.review-category p,
+.memory-item p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.review-patterns,
+.review-categories,
+.memory-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.review-pattern,
+.review-category,
+.memory-item {
+  padding: 12px;
+}
+
+.review-category small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.priority-list {
+  display: grid;
+  gap: 8px;
+}
+
+.priority-question {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  gap: 10px;
+  padding: 12px;
+}
+
+.priority-question h4 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.priority-question p {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.priority-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.priority-tags span {
+  padding: 1px 7px;
+  border-radius: 100px;
+  color: var(--ink-soft);
+  background: rgba(49, 95, 115, 0.10);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 /* ---- 题库 ---- */
 .bank-list {
   display: grid;
@@ -1168,6 +1367,26 @@ textarea::placeholder {
   .accuracy strong {
     font-size: 24px;
   }
+
+  .review-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .review-plan,
+  .review-patterns,
+  .review-categories,
+  .memory-list {
+    grid-template-columns: 1fr;
+  }
+
+  .review-head {
+    align-items: stretch;
+  }
+
+  .review-actions,
+  .review-actions button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1190,5 +1409,9 @@ textarea::placeholder {
 
   .bookmark-btn {
     align-self: flex-end;
+  }
+
+  .review-summary-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -34,6 +34,7 @@
     <nav class="tabs">
       <button class="active" data-tab="importPanel">导入</button>
       <button data-tab="practicePanel">刷题</button>
+      <button data-tab="reviewPanel">复习</button>
       <button data-tab="bankPanel">题库</button>
     </nav>
 
@@ -83,6 +84,17 @@
         <button id="prevBtn" class="ghost" style="display:none">上一题</button>
         <button id="nextBtn">下一题</button>
       </div>
+    </section>
+
+    <section id="reviewPanel" class="panel">
+      <div class="review-head">
+        <h2>复习分析</h2>
+        <div class="review-actions">
+          <button data-review-action="practice-wrong">开始错题重做</button>
+          <button class="ghost" data-review-action="open-wrong-bank">打开错题列表</button>
+        </div>
+      </div>
+      <div id="reviewInsights" class="review-insights"></div>
     </section>
 
     <section id="bankPanel" class="panel">

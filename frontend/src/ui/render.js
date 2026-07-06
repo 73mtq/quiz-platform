@@ -1,6 +1,7 @@
 import { activeCourse, currentQuestion, runtime, settings } from "../state/appState.js";
 import { getChoiceAnswerTexts, hasChoiceAnswer, normalizeChoiceText } from "../utils/answers.js";
 import { escapeHtml, rate } from "../utils/format.js";
+import { analyzeReview, getQuestionTags } from "../utils/review.js";
 
 /** 随机打乱数组（Fisher-Yates 洗牌算法） */
 function shuffleArray(arr) {
@@ -31,6 +32,7 @@ export function renderApp() {
     `<option value="${item.id}" ${item.id === runtime.state.activeCourseId ? "selected" : ""}>${escapeHtml(item.name)}（${item.questions.length}题）</option>`
   )).join("");
   renderPractice(course);
+  renderReview(course);
   renderBank(course);
 }
 
@@ -233,6 +235,138 @@ function renderAnswerFeedback(question) {
   if (!settings.showAnswer && !settings.showExplanation) lines.push("已记录本题结果，可在上方开关中选择是否显示答案和解析。");
 
   return `<div class="${feedback.correct ? "correct" : "wrong"}">${lines.join("<br>")}</div>`;
+}
+
+function renderReview(course) {
+  const panel = $("#reviewPanel");
+  const target = $("#reviewInsights");
+  if (!panel || !target || !panel.classList.contains("active")) return;
+
+  const review = analyzeReview(course);
+  if (!review.totalQuestions) {
+    target.innerHTML = `<p class="empty">当前课程还没有题目。</p>`;
+    return;
+  }
+
+  if (!review.wrongQuestions) {
+    target.innerHTML = `
+      <div class="review-summary-grid">
+        ${renderReviewMetric("总题数", review.totalQuestions, "当前课程")}
+        ${renderReviewMetric("已练习", review.answeredQuestions, "有答题记录")}
+        ${renderReviewMetric("正确率", `${review.accuracy}%`, "累计答题")}
+      </div>
+      <p class="empty">当前课程暂无错题。可以先用“指定数量”模式抽练一轮。</p>
+    `;
+    return;
+  }
+
+  target.innerHTML = `
+    <div class="review-summary-grid">
+      ${renderReviewMetric("错题", review.wrongQuestions, `占题库 ${Math.round((review.wrongQuestions / review.totalQuestions) * 100)}%`, "danger")}
+      ${renderReviewMetric("反复错", review.repeatedWrong, "错 2 次以上", review.repeatedWrong ? "danger" : "")}
+      ${renderReviewMetric("多选错题", review.multiWrong, "优先防漏选", review.multiWrong ? "gold" : "")}
+      ${renderReviewMetric("累计正确率", `${review.accuracy}%`, `${review.correctAttempts}/${review.correctAttempts + review.wrongAttempts}`)}
+    </div>
+    <section class="review-section">
+      <h3>今日复习顺序</h3>
+      <div class="review-plan">
+        ${renderPlanStep("1", "先刷反复错题", `${review.repeatedWrong || review.wrongQuestions} 道优先`, "把最顽固的混淆点先清掉。")}
+        ${renderPlanStep("2", "再刷多选错题", `${review.multiWrong} 道`, "按完整并列组记，避免漏选。")}
+        ${renderPlanStep("3", "最后刷全部错题", `${review.wrongQuestions} 道`, "用错题重做模式随机巩固。")}
+      </div>
+    </section>
+    <section class="review-section">
+      <h3>错题类型</h3>
+      <div class="review-patterns">
+        ${review.patterns.slice(0, 5).map(renderPattern).join("")}
+      </div>
+    </section>
+    <section class="review-section">
+      <h3>薄弱板块</h3>
+      <div class="review-categories">
+        ${review.categories.slice(0, 6).map(renderCategory).join("")}
+      </div>
+    </section>
+    <section class="review-section">
+      <h3>记忆提示</h3>
+      <div class="memory-list">
+        ${review.memoryCards.map((card) => `
+          <article class="memory-item">
+            <strong>${escapeHtml(card.title)}</strong>
+            <p>${escapeHtml(card.body)}</p>
+          </article>
+        `).join("")}
+      </div>
+    </section>
+    <section class="review-section">
+      <h3>优先错题</h3>
+      <div class="priority-list">
+        ${review.priorityQuestions.map(renderPriorityQuestion).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderReviewMetric(label, value, detail, tone = "") {
+  return `
+    <div class="review-metric ${tone ? `is-${tone}` : ""}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(detail)}</small>
+    </div>
+  `;
+}
+
+function renderPlanStep(index, title, count, detail) {
+  return `
+    <article class="review-plan-step">
+      <b>${index}</b>
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <span>${escapeHtml(count)}</span>
+        <p>${escapeHtml(detail)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function renderPattern(pattern) {
+  return `
+    <article class="review-pattern">
+      <strong>${escapeHtml(pattern.name)}</strong>
+      <span>${pattern.count} 道 / 错 ${pattern.attempts} 次</span>
+      <p>${escapeHtml(pattern.advice)}</p>
+    </article>
+  `;
+}
+
+function renderCategory(category) {
+  return `
+    <article class="review-category">
+      <div>
+        <strong>${escapeHtml(category.name)}</strong>
+        <span>${category.count} 道错题${category.multiCount ? `，${category.multiCount} 道多选` : ""}</span>
+      </div>
+      <p>${escapeHtml(category.advice)}</p>
+      ${category.sample ? `<small>例：${escapeHtml(category.sample.stem)}</small>` : ""}
+    </article>
+  `;
+}
+
+function renderPriorityQuestion(question, index) {
+  const tags = getQuestionTags(question);
+  return `
+    <article class="priority-question">
+      <div class="priority-rank">${index + 1}</div>
+      <div>
+        <h4>${escapeHtml(question.stem)}</h4>
+        <p>答案：${escapeHtml((question.answer || []).join("、"))}</p>
+        <div class="priority-tags">
+          ${tags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}
+        </div>
+      </div>
+    </article>
+  `;
 }
 
 function renderBank(course) {
