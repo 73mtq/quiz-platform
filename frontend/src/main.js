@@ -285,6 +285,7 @@ async function submitAnswer() {
   const course = activeCourse();
   course.practice.answeredInRound += 1;
   course.practice.totalAnswered += 1;
+  const answeredAt = new Date().toISOString();
   if (correct) {
     course.practice.correctInRound += 1;
     course.practice.totalCorrect += 1;
@@ -292,6 +293,7 @@ async function submitAnswer() {
   } else {
     question.wrongCount = (question.wrongCount || 0) + 1;
   }
+  updateLocalQuestionReview(question, { correct, selectedAnswers: runtime.selectedAnswers, answeredAt });
   course.practice.lastAnswer = runtime.answerFeedback;
   updatePracticeOnly();
 
@@ -322,6 +324,7 @@ async function submitAnswer() {
     if (serverQ && localQ) {
       localQ.wrongCount = serverQ.wrongCount;
       localQ.correctCount = serverQ.correctCount;
+      localQ.review = serverQ.review;
     }
   }).catch(() => {});
 
@@ -331,6 +334,32 @@ async function submitAnswer() {
       nextQuestion();
     }, 200);
   }
+}
+
+function updateLocalQuestionReview(question, { correct, selectedAnswers, answeredAt }) {
+  const review = {
+    lastAnsweredAt: question.review?.lastAnsweredAt || "",
+    lastWrongAt: question.review?.lastWrongAt || "",
+    lastCorrectAt: question.review?.lastCorrectAt || "",
+    consecutiveCorrect: Number(question.review?.consecutiveCorrect) || 0,
+    masteredAt: question.review?.masteredAt || "",
+    lastSelectedAnswers: Array.isArray(question.review?.lastSelectedAnswers) ? question.review.lastSelectedAnswers : []
+  };
+
+  review.lastAnsweredAt = answeredAt;
+  review.lastSelectedAnswers = (selectedAnswers || []).map((item) => String(item));
+  if (correct) {
+    review.lastCorrectAt = answeredAt;
+    review.consecutiveCorrect += 1;
+    if ((question.wrongCount || 0) > 0 && review.consecutiveCorrect >= 2) {
+      review.masteredAt = review.masteredAt || answeredAt;
+    }
+  } else {
+    review.lastWrongAt = answeredAt;
+    review.consecutiveCorrect = 0;
+    review.masteredAt = "";
+  }
+  question.review = review;
 }
 
 async function resetRound() {
