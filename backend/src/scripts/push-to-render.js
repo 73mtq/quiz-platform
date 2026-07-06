@@ -106,10 +106,12 @@ function collectFixes(remoteState, indexes) {
   const skipped = [];
   let matched = 0;
   let legacyAnswerCount = 0;
+  let choiceQuestionCount = 0;
 
   for (const course of remoteState.courses || []) {
     for (const rawQuestion of course.questions || []) {
       if (rawQuestion.type === "fill-blank") continue;
+      choiceQuestionCount += 1;
 
       const normalized = normalizeQuestion(rawQuestion);
       const answerLooksLegacy = (rawQuestion.answer || []).some((answer) =>
@@ -147,7 +149,7 @@ function collectFixes(remoteState, indexes) {
     }
   }
 
-  return { fixes, skipped, matched, legacyAnswerCount };
+  return { fixes, skipped, matched, legacyAnswerCount, choiceQuestionCount };
 }
 
 async function main() {
@@ -170,9 +172,9 @@ async function main() {
   const remoteCount = (remote.data.courses || []).reduce((sum, course) => sum + (course.questions || []).length, 0);
   console.log(`Render：${remote.data.courses.length} 门课程，${remoteCount} 题`);
 
-  const { fixes, skipped, matched, legacyAnswerCount } = collectFixes(remote.data, indexes);
+  const { fixes, skipped, matched, legacyAnswerCount, choiceQuestionCount } = collectFixes(remote.data, indexes);
   console.log(`匹配完整题库：${matched} 题`);
-  console.log(`疑似仍按字母返回答案：${legacyAnswerCount} 题`);
+  console.log(`疑似仍按字母返回答案：${legacyAnswerCount}/${choiceQuestionCount} 题`);
   console.log(`需要修复答案内容：${fixes.length} 题`);
 
   if (fixes.length) {
@@ -194,7 +196,7 @@ async function main() {
     return;
   }
 
-  if (legacyAnswerCount > 100) {
+  if (legacyAnswerCount > choiceQuestionCount * 0.75) {
     throw new Error("Render 仍大量返回字母答案，说明新代码可能尚未部署完成；请稍后重试。");
   }
 
