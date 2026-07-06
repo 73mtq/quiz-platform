@@ -1,139 +1,232 @@
 /**
- * 把本地 data/quiz-data.json 里"修复后的多选题 answer"推送到 Render
- *
- * 策略：
- *   1. 拉 Render 当前 state（GET /api/state）
- *   2. 读本地 state
- *   3. 对 Render 上每道题，用 stem 在本地任意课里找匹配
- *   4. 如果本地版 answer 长度 > Render 版（即 Render 被错识别），调
- *      POST /api/questions/update 改 answer
- *   5. 报告
+ * 用完整 ocs-answerer-wrapper 题库把 Render 上的答案修成"选项内容"。
  *
  * 用法：
- *   node backend/src/scripts/push-to-render.js --dry-run   # 预览
- *   node backend/src/scripts/push-to-render.js             # 实际推送
- *   RENDER_URL=https://your-app.onrender.com node backend/src/scripts/push-to-render.js
+ *   node backend/src/scripts/push-to-render.js --dry-run
+ *   node backend/src/scripts/push-to-render.js
+ *
+ * 可选环境变量：
+ *   RENDER_URL    默认 https://quiz-platform-fbxp.onrender.com
+ *   WRAPPER_PATH  默认 D:\桌面\习思想\习思题库\ocs-answerer-wrapper.json
  */
 import fs from "node:fs";
 import path from "node:path";
+import { normalizeChoiceText, normalizeQuestion } from "../utils.js";
 
-const RENDER_URL = process.env.RENDER_URL || "https://quiz-platform-fbxp.onrender.com";
-const LOCAL_DB = path.resolve("data/quiz-data.json");
+const RENDER_URL = (process.env.RENDER_URL || "https://quiz-platform-fbxp.onrender.com").replace(/\/+$/, "");
+const WRAPPER_PATH = process.env.WRAPPER_PATH || "D:\\桌面\\习思想\\习思题库\\ocs-answerer-wrapper.json";
 const DRY_RUN = process.argv.includes("--dry-run");
 
 async function callApi(endpoint, body = null, method = "POST") {
   const opts = { method, headers: { "content-type": "application/json" } };
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch(RENDER_URL + endpoint, opts);
-  let data;
-  try { data = await res.json(); } catch { data = null; }
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
   return { ok: res.ok, status: res.status, data };
+}
+
+function parseWrapperBank(filePath) {
+  const wrapper = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const handler = wrapper?.[0]?.handler || "";
+  const marker = "const bank = JSON.parse(\"";
+  const start = handler.indexOf(marker);
+  if (start === -1) throw new Error("未在 wrapper handler 中找到题库 JSON");
+  const from = start + marker.length;
+  const end = handler.indexOf("\");", from);
+  if (end === -1) throw new Error("wrapper handler 中的题库 JSON 未闭合");
+
+  const escapedJson = handler.slice(from, end);
+  const jsonText = JSON.parse(`"${escapedJson}"`);
+  return JSON.parse(jsonText);
+}
+
+function uniqueSetKey(values) {
+  return [...new Set((values || []).map(normalizeChoiceText).filter(Boolean))].sort().join("|");
+}
+
+function optionSetKey(options) {
+  return uniqueSetKey((options || []).map((option) => option.text ?? option));
+}
+
+function stemKey(value) {
+  return normalizeChoiceText(String(value || "").replace(/&nbsp;/g, ""));
+}
+
+function fullQuestionKey(stem, options) {
+  return `${stemKey(stem)}::${optionSetKey(options)}`;
+}
+
+function buildWrapperIndexes(bank) {
+  const byFull = new Map();
+  const byStem = new Map();
+  for (const item of bank) {
+    const answerTexts = Array.isArray(item.t) ? item.t : String(item.a || "").split("#").filter(Boolean);
+    const normalized = {
+      stem: item.q || "",
+      key: item.k || item.q || "",
+      options: item.o || [],
+      answerTexts
+    };
+    const full = `${stemKey(normalized.key)}::${uniqueSetKey(normalized.options)}`;
+    if (!byFull.has(full)) byFull.set(full, []);
+    byFull.get(full).push(normalized);
+
+    const stem = stemKey(normalized.key);
+    if (!byStem.has(stem)) byStem.set(stem, []);
+    byStem.get(stem).push(normalized);
+  }
+  return { byFull, byStem };
+}
+
+function resolveAnswerTexts(question, wrapperAnswers) {
+  return wrapperAnswers.map((answer) => {
+    const matched = question.options.find((option) => normalizeChoiceText(option.text) === normalizeChoiceText(answer));
+    return matched ? matched.text : answer;
+  }).filter(Boolean);
+}
+
+function findWrapperCandidate(question, indexes) {
+  const full = fullQuestionKey(question.stem, question.options);
+  const fullMatches = indexes.byFull.get(full) || [];
+  if (fullMatches.length) return { matchType: "full", candidates: fullMatches };
+
+  const stemMatches = indexes.byStem.get(stemKey(question.stem)) || [];
+  if (stemMatches.length === 1) return { matchType: "stem", candidates: stemMatches };
+
+  return { matchType: "none", candidates: [] };
+}
+
+function collectFixes(remoteState, indexes) {
+  const fixes = [];
+  const skipped = [];
+  let matched = 0;
+  let legacyAnswerCount = 0;
+
+  for (const course of remoteState.courses || []) {
+    for (const rawQuestion of course.questions || []) {
+      if (rawQuestion.type === "fill-blank") continue;
+
+      const normalized = normalizeQuestion(rawQuestion);
+      const answerLooksLegacy = (rawQuestion.answer || []).some((answer) =>
+        rawQuestion.options?.some((option) => String(option.key || "").toUpperCase() === String(answer || "").toUpperCase())
+      );
+      if (answerLooksLegacy) legacyAnswerCount += 1;
+
+      const { matchType, candidates } = findWrapperCandidate(normalized, indexes);
+      if (!candidates.length) {
+        if (skipped.length < 10) {
+          skipped.push({
+            course: course.name,
+            reason: "完整题库中未匹配",
+            stem: normalized.stem.slice(0, 80)
+          });
+        }
+        continue;
+      }
+      matched += 1;
+
+      const currentKey = uniqueSetKey(normalized.answer);
+      const candidate = candidates.find((item) => uniqueSetKey(item.answerTexts) !== currentKey) || candidates[0];
+      const nextAnswer = resolveAnswerTexts(normalized, candidate.answerTexts);
+      const nextKey = uniqueSetKey(nextAnswer);
+      if (!nextKey || nextKey === currentKey) continue;
+
+      fixes.push({
+        courseName: course.name,
+        questionId: rawQuestion.id,
+        matchType,
+        oldAnswer: normalized.answer,
+        newAnswer: nextAnswer,
+        stem: normalized.stem.slice(0, 100)
+      });
+    }
+  }
+
+  return { fixes, skipped, matched, legacyAnswerCount };
 }
 
 async function main() {
   console.log("=".repeat(80));
-  console.log("Push-to-Render: 本地多选题修复 → Render");
+  console.log("Push-to-Render: 答案内容绑定修复");
   console.log("=".repeat(80));
   console.log(`Target: ${RENDER_URL}`);
+  console.log(`Wrapper: ${path.resolve(WRAPPER_PATH)}`);
   console.log(`Mode: ${DRY_RUN ? "DRY RUN" : "实际推送"}`);
 
-  // 1. 拉 Render state
-  console.log("\nStep 1: 拉 Render 当前 state...");
+  const bank = parseWrapperBank(WRAPPER_PATH);
+  const indexes = buildWrapperIndexes(bank);
+  console.log(`完整题库：${bank.length} 题`);
+
   const remote = await callApi("/api/state", null, "GET");
-  if (!remote.ok) throw new Error(`拉 Render state 失败: status=${remote.status} body=${JSON.stringify(remote.data)}`);
-  console.log(`  Render 有 ${remote.data.courses.length} 门课程，共 ${remote.data.courses.reduce((s, c) => s + c.questions.length, 0)} 题`);
-  for (const c of remote.data.courses) {
-    console.log(`    - ${c.name} (${c.questions.length} 题)`);
+  if (!remote.ok) {
+    throw new Error(`拉 Render state 失败: status=${remote.status} body=${JSON.stringify(remote.data)}`);
   }
 
-  // 2. 读本地 state
-  console.log("\nStep 2: 读本地 state...");
-  const local = JSON.parse(fs.readFileSync(LOCAL_DB, "utf8").replace(/^\uFEFF/, ""));
-  const localStemMap = new Map();
-  for (const c of local.courses) {
-    for (const q of c.questions) {
-      if (!localStemMap.has(q.stem)) localStemMap.set(q.stem, q);
+  const remoteCount = (remote.data.courses || []).reduce((sum, course) => sum + (course.questions || []).length, 0);
+  console.log(`Render：${remote.data.courses.length} 门课程，${remoteCount} 题`);
+
+  const { fixes, skipped, matched, legacyAnswerCount } = collectFixes(remote.data, indexes);
+  console.log(`匹配完整题库：${matched} 题`);
+  console.log(`疑似仍按字母返回答案：${legacyAnswerCount} 题`);
+  console.log(`需要修复答案内容：${fixes.length} 题`);
+
+  if (fixes.length) {
+    console.log("\n修复样本（前 10）：");
+    for (const fix of fixes.slice(0, 10)) {
+      console.log(`  [${fix.courseName}] ${JSON.stringify(fix.oldAnswer)} -> ${JSON.stringify(fix.newAnswer)} | ${fix.stem}`);
     }
   }
-  console.log(`  本地有 ${local.courses.length} 门课程，${localStemMap.size} 唯一 stem`);
 
-  // 3. 找需要修复的题
-  console.log("\nStep 3: 找需要修复的题...");
-  const fixes = [];
-  let matched = 0, renderOnly = 0;
-  for (const rc of remote.data.courses) {
-    if (rc.questions.length === 0) continue;
-    for (const rq of rc.questions) {
-      const lq = localStemMap.get(rq.stem);
-      if (!lq) { renderOnly++; continue; }
-      matched++;
-      const remoteAnsLen = (rq.answer || []).length;
-      const localAnsLen = (lq.answer || []).length;
-      if (localAnsLen > 1 && remoteAnsLen === 1) {
-        fixes.push({
-          courseName: rc.name,
-          questionId: rq.id,
-          oldAnswer: [...(rq.answer || [])],
-          newAnswer: lq.answer,
-          stem: rq.stem.slice(0, 50)
-        });
-      }
-    }
-  }
-  console.log(`  Render 习题能匹配本地 stem: ${matched}`);
-  console.log(`  Render 独有（本地无）: ${renderOnly}`);
-  console.log(`  需要修复（Render单选+本地多选）: ${fixes.length}`);
-
-  if (fixes.length > 0) {
-    console.log("\n前 5 个修复样本：");
-    for (const f of fixes.slice(0, 5)) {
-      console.log(`  [${f.courseName}] ${JSON.stringify(f.oldAnswer)} → ${JSON.stringify(f.newAnswer)} | ${f.stem}...`);
-    }
-
-    // 按课程统计
-    const perCourse = {};
-    for (const f of fixes) perCourse[f.courseName] = (perCourse[f.courseName] || 0) + 1;
-    console.log("\n按课程统计：");
-    for (const [c, n] of Object.entries(perCourse).sort((a, b) => b[1] - a[1])) {
-      console.log(`  ${c.padEnd(8)}: ${n} 道`);
+  if (skipped.length) {
+    console.log("\n跳过样本（前 10）：");
+    for (const item of skipped) {
+      console.log(`  [${item.course}] ${item.reason}: ${item.stem}`);
     }
   }
 
   if (DRY_RUN) {
-    console.log("\n" + "=".repeat(80));
-    console.log("DRY RUN：没改任何东西。去掉 --dry-run 实际推送");
-    console.log("=".repeat(80));
-    process.exit(0);
+    console.log("\nDRY RUN：未修改线上数据。");
+    return;
   }
 
-  // 4. 推送
-  console.log("\nStep 4: 推送修复...");
-  let ok = 0, fail = 0;
-  const startTime = Date.now();
-  for (let i = 0; i < fixes.length; i++) {
-    const f = fixes[i];
+  if (legacyAnswerCount > 100) {
+    throw new Error("Render 仍大量返回字母答案，说明新代码可能尚未部署完成；请稍后重试。");
+  }
+
+  let ok = 0;
+  let fail = 0;
+  const startedAt = Date.now();
+  for (let index = 0; index < fixes.length; index += 1) {
+    const fix = fixes[index];
     const res = await callApi("/api/questions/update", {
-      questionId: f.questionId,
-      answer: f.newAnswer
+      questionId: fix.questionId,
+      answer: fix.newAnswer
     });
-    if (res.ok) ok++;
-    else {
-      fail++;
-      if (fail <= 3) console.error(`  ❌ [${f.courseName}] ${f.stem}: ${JSON.stringify(res.data)}`);
+    if (res.ok) {
+      ok += 1;
+    } else {
+      fail += 1;
+      if (fail <= 5) console.error(`  失败 [${fix.courseName}] ${fix.stem}: ${JSON.stringify(res.data)}`);
     }
-    if ((i + 1) % 50 === 0 || i + 1 === fixes.length) {
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      console.log(`  进度: ${i + 1}/${fixes.length}  成功 ${ok} 失败 ${fail}  耗时 ${elapsed}s`);
+    if ((index + 1) % 25 === 0 || index + 1 === fixes.length) {
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      console.log(`  进度 ${index + 1}/${fixes.length} 成功 ${ok} 失败 ${fail} 耗时 ${elapsed}s`);
     }
-    // 小延迟避免 Render 限流
-    await new Promise(r => setTimeout(r, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
   console.log("\n" + "=".repeat(80));
-  console.log(`完成！成功 ${ok}  失败 ${fail}`);
-  if (fail > 0) console.log("失败的题：可能是 ID 在 Render 重启后变了（PostgreSQL UUID），需重拉 state 重试");
-  console.log("刷新网站验证：https://" + RENDER_URL.replace(/^https?:\/\//, ""));
+  console.log(`完成：成功 ${ok}，失败 ${fail}`);
+  console.log(`刷新验证：${RENDER_URL}`);
   console.log("=".repeat(80));
 }
 
-main().catch(e => { console.error("Error:", e.message); process.exit(1); });
+main().catch((error) => {
+  console.error("Error:", error.message);
+  process.exit(1);
+});

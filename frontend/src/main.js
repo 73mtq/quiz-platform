@@ -1,6 +1,7 @@
 import { api } from "./api/client.js";
 import { activeCourse, clearCurrentAnswer, currentQuestion, persistFeedbackSettings, runtime, settings } from "./state/appState.js";
 import { renderApp, renderImportResult, updatePracticeOnly } from "./ui/render.js";
+import { getChoiceAnswerTexts, isChoiceAnswerCorrect, normalizeChoiceText } from "./utils/answers.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
 
@@ -90,6 +91,7 @@ function bind() {
   if (bankList) {
     bankList.addEventListener("click", deleteQuestion);
     bankList.addEventListener("click", handleBankActions);
+    bankList.addEventListener("input", handleBankFormInput);
   }
   if (bankToolbar) {
     bankToolbar.addEventListener("click", handleBankToolbar);
@@ -255,9 +257,8 @@ async function submitAnswer() {
     });
     correct = blanksCorrect.length === question.answer.length && blanksCorrect.every(Boolean);
   } else {
-    const selected = runtime.selectedAnswers.map((s) => s.toUpperCase()).sort();
-    const answer = [...question.answer].sort();
-    correct = selected.length === answer.length && selected.every((s, i) => s === answer[i]);
+    runtime.selectedAnswers = getChoiceAnswerTexts(question, runtime.selectedAnswers);
+    correct = isChoiceAnswerCorrect(question, runtime.selectedAnswers);
   }
 
   // 立即显示反馈
@@ -400,6 +401,18 @@ function handleBankActions(event) {
   }
 }
 
+function handleBankFormInput(event) {
+  if (!event.target.classList.contains("form-option-key") && !event.target.classList.contains("form-option-text")) return;
+  const form = event.target.closest("[data-form-id]");
+  if (!form) return;
+
+  const options = Array.from(form.querySelectorAll(".form-option-row")).map((row) => ({
+    key: row.querySelector(".form-option-key").value.trim().toUpperCase(),
+    text: row.querySelector(".form-option-text").value.trim()
+  })).filter((option) => option.key);
+  refreshOptionCheckboxes(form.dataset.formId, options);
+}
+
 // 题目类型切换
 document.addEventListener("change", (event) => {
   if (event.target.classList.contains("form-type")) {
@@ -449,14 +462,14 @@ function refreshOptionCheckboxes(formId, options) {
   const answersDiv = form.querySelector(".form-answers");
   if (!answersDiv) return;
 
-  const checkedKeys = new Set(
-    Array.from(answersDiv.querySelectorAll("input:checked")).map((cb) => cb.value)
-  );
+  const checked = Array.from(answersDiv.querySelectorAll("input:checked"));
+  const checkedIndexes = new Set(checked.map((cb) => cb.dataset.optionIndex).filter(Boolean));
+  const checkedValues = checked.map((cb) => cb.value);
 
-  answersDiv.innerHTML = options.map((opt) => `
+  answersDiv.innerHTML = options.map((opt, index) => `
     <label class="form-answer-check">
-      <input type="checkbox" value="${escapeHtml(opt.key)}" ${checkedKeys.has(opt.key) ? "checked" : ""}>
-      <span>${escapeHtml(opt.key)}</span>
+      <input type="checkbox" value="${escapeHtml(opt.text)}" data-option-index="${index}" ${checkedIndexes.has(String(index)) || checkedValues.some((value) => normalizeChoiceText(value) === normalizeChoiceText(opt.text)) ? "checked" : ""}>
+      <span>${escapeHtml(opt.key)}. ${escapeHtml(opt.text)}</span>
     </label>
   `).join("");
 }
@@ -573,26 +586,26 @@ function bindKeyboardShortcuts() {
       if (!question || runtime.answerFeedback) return;
 
       // 检查选项是否存在
-      const optionExists = question.options.some((opt) => opt.key === key);
-      if (!optionExists) return;
+      const option = question.options.find((opt) => opt.key === key);
+      if (!option) return;
 
       const isMulti = question.answer.length > 1;
-      const input = document.querySelector(`input[name='answer'][value='${key}']`);
+      const input = document.querySelector(`input[name='answer'][data-key='${key}']`);
       if (!input) return;
 
       if (isMulti) {
         input.checked = !input.checked;
         if (input.checked) {
-          runtime.selectedAnswers = [...runtime.selectedAnswers, key];
+          runtime.selectedAnswers = getChoiceAnswerTexts(question, [...runtime.selectedAnswers, option.text]);
         } else {
-          runtime.selectedAnswers = runtime.selectedAnswers.filter((v) => v !== key);
+          runtime.selectedAnswers = runtime.selectedAnswers.filter((v) => normalizeChoiceText(v) !== normalizeChoiceText(option.text));
         }
       } else {
         document.querySelectorAll("input[name='answer']").forEach((el) => {
           el.checked = false;
         });
         input.checked = true;
-        runtime.selectedAnswers = [key];
+        runtime.selectedAnswers = getChoiceAnswerTexts(question, [option.text]);
       }
       return;
     }

@@ -25,6 +25,41 @@ export function readBody(req, maxBytes = 20 * 1024 * 1024) {
   });
 }
 
+export function normalizeChoiceText(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]/gu, "")
+    .toLowerCase();
+}
+
+export function getChoiceAnswerTexts(question, answers = question.answer || []) {
+  const options = question.options || [];
+  const seen = new Set();
+  const result = [];
+
+  for (const answer of answers || []) {
+    const raw = String(answer || "").trim();
+    if (!raw) continue;
+
+    const byKey = options.find((option) => option.key.toUpperCase() === raw.toUpperCase());
+    const byText = byKey || options.find((option) => normalizeChoiceText(option.text) === normalizeChoiceText(raw));
+    const text = byText ? byText.text : raw;
+    const key = normalizeChoiceText(text);
+    if (!key || seen.has(key)) continue;
+
+    seen.add(key);
+    result.push(text);
+  }
+
+  return result;
+}
+
+export function areChoiceAnswerSetsEqual(question, selectedAnswers, correctAnswers = question.answer || []) {
+  const selected = getChoiceAnswerTexts(question, selectedAnswers).map(normalizeChoiceText).sort();
+  const correct = getChoiceAnswerTexts(question, correctAnswers).map(normalizeChoiceText).sort();
+  return selected.length === correct.length && selected.every((item, index) => item === correct[index]);
+}
+
 export function normalizeQuestion(question) {
   // 自动推断类型：显式指定 > 无选项有答案 > 默认选择题
   let type = question.type;
@@ -33,17 +68,22 @@ export function normalizeQuestion(question) {
     const hasAnswer = (question.answer || []).length > 0;
     type = !hasOptions && hasAnswer ? "fill-blank" : "choice";
   }
+  const options = (question.options || []).map((option) => {
+    const key = String(option.key || "").trim().toUpperCase();
+    return {
+      key,
+      text: cleanOptionText(String(option.text || "").trim(), key)
+    };
+  }).filter((option) => option.key && option.text);
+
   const normalized = {
     id: question.id || createId("question"),
     type,
     stem: String(question.stem || "").trim(),
-    options: (question.options || []).map((option) => ({
-      key: String(option.key || "").trim().toUpperCase(),
-      text: String(option.text || "").trim()
-    })).filter((option) => option.key && option.text),
+    options,
     answer: type === "fill-blank"
       ? (question.answer || []).map((item) => String(item).trim()).filter(Boolean)
-      : [...new Set((question.answer || []).map((item) => String(item).trim().toUpperCase()).filter(Boolean))],
+      : getChoiceAnswerTexts({ options }, question.answer || []),
     explanation: String(question.explanation || "").trim(),
     wrongCount: Number(question.wrongCount) || 0,
     correctCount: Number(question.correctCount) || 0,
@@ -62,9 +102,14 @@ export function validateQuestion(question) {
   if (question.options.length < 2) return "至少需要 2 个选项";
   if (!question.answer.length) return "缺少正确答案";
 
-  const optionKeys = new Set(question.options.map((option) => option.key));
-  const invalidAnswer = question.answer.find((key) => !optionKeys.has(key));
-  if (invalidAnswer) return `答案 ${invalidAnswer} 不在选项中`;
+  const optionTexts = new Set(question.options.map((option) => normalizeChoiceText(option.text)));
+  const invalidAnswer = question.answer.find((answer) => !optionTexts.has(normalizeChoiceText(answer)));
+  if (invalidAnswer) return `答案 ${invalidAnswer} 不在选项内容中`;
 
   return "";
+}
+
+function cleanOptionText(text, key) {
+  if (!/^[A-Z]$/.test(key)) return text;
+  return text.replace(new RegExp(`^${key}\\s*[.．、)）:：]\\s*`, "i"), "").trim();
 }

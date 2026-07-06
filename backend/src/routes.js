@@ -1,7 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { frontendDir } from "./config.js";
-import { createId, normalizeQuestion, readBody, sendJson, validateQuestion } from "./utils.js";
+import {
+  areChoiceAnswerSetsEqual,
+  createId,
+  getChoiceAnswerTexts,
+  normalizeChoiceText,
+  normalizeQuestion,
+  readBody,
+  sendJson,
+  validateQuestion
+} from "./utils.js";
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -197,12 +206,8 @@ async function handleApi(req, res, url, repository, aiService) {
           });
           correct = blanksCorrect.length === question.answer.length && blanksCorrect.every(Boolean);
         } else {
-          selectedAnswers = (body.selectedAnswers || [])
-            .map((item) => String(item).toUpperCase())
-            .sort();
-          const correctAnswers = [...question.answer].sort();
-          correct = selectedAnswers.length === correctAnswers.length
-            && selectedAnswers.every((item, index) => item === correctAnswers[index]);
+          selectedAnswers = getChoiceAnswerTexts(question, body.selectedAnswers || []);
+          correct = areChoiceAnswerSetsEqual(question, selectedAnswers);
         }
         course.practice.answeredInRound += 1;
         course.practice.totalAnswered += 1;
@@ -358,8 +363,8 @@ function questionFingerprint(question) {
   const options = (question.options || [])
     .map((option) => `${String(option.key || "").trim().toUpperCase()}:${normalizeFingerprintText(option.text)}`)
     .join("|");
-  const answer = (question.answer || [])
-    .map((item) => String(item).trim().toUpperCase())
+  const answer = getChoiceAnswerTexts(question)
+    .map((item) => normalizeChoiceText(item))
     .sort()
     .join(",");
 

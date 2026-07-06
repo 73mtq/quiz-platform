@@ -1,4 +1,5 @@
 import { activeCourse, currentQuestion, runtime, settings } from "../state/appState.js";
+import { getChoiceAnswerTexts, hasChoiceAnswer, normalizeChoiceText } from "../utils/answers.js";
 import { escapeHtml, rate } from "../utils/format.js";
 
 /** 随机打乱数组（Fisher-Yates 洗牌算法） */
@@ -70,11 +71,12 @@ export function renderImportResult(importResult, source = "导入") {
 
 function renderImportQuestion(question, index) {
   const isFillBlank = question.type === "fill-blank";
+  const answer = isFillBlank ? (question.answer || []) : getChoiceAnswerTexts(question);
   return `
     <article>
       <h3>${index + 1}. ${escapeHtml(question.stem || "未命名题目")} ${isFillBlank ? '<span class="tag-fill-blank">填空题</span>' : ""}</h3>
       ${isFillBlank ? "" : `<p>选项数：${(question.options || []).length}</p>`}
-      <p>答案：${(question.answer || []).join("、") || "未识别"}</p>
+      <p>答案：${escapeHtml(answer.join("、") || "未识别")}</p>
       <p>解析：${question.explanation ? "已识别" : "无"}</p>
     </article>
   `;
@@ -145,24 +147,25 @@ function renderChoicePractice(question) {
       <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏">★</button>
     </div>
     ${options.map((option) => `
-      <label class="option ${optionClass(question, option.key)}">
-        <input type="${inputType}" name="answer" value="${option.key}" ${runtime.answerFeedback ? "disabled" : ""}>
+      <label class="option ${optionClass(question, option)}">
+        <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback ? "disabled" : ""}>
         <span><b>${option.key}.</b> ${escapeHtml(option.text)}</span>
       </label>
     `).join("")}
     <div id="answerResult">${renderAnswerFeedback(question)}</div>
   `;
   document.querySelectorAll("input[name='answer']").forEach((input) => {
-    input.checked = runtime.selectedAnswers.includes(input.value);
+    input.checked = hasChoiceAnswer(question, input.value, runtime.selectedAnswers);
     input.addEventListener("change", () => {
+      const value = input.value;
       if (isMulti) {
         if (input.checked) {
-          runtime.selectedAnswers = [...runtime.selectedAnswers, input.value];
+          runtime.selectedAnswers = getChoiceAnswerTexts(question, [...runtime.selectedAnswers, value]);
         } else {
-          runtime.selectedAnswers = runtime.selectedAnswers.filter((v) => v !== input.value);
+          runtime.selectedAnswers = runtime.selectedAnswers.filter((v) => normalizeChoiceText(v) !== normalizeChoiceText(value));
         }
       } else {
-        runtime.selectedAnswers = [input.value];
+        runtime.selectedAnswers = getChoiceAnswerTexts(question, [value]);
       }
     });
   });
@@ -201,11 +204,11 @@ function renderFillBlankPractice(question) {
   }
 }
 
-function optionClass(question, key) {
+function optionClass(question, option) {
   const feedback = runtime.answerFeedback;
   if (!feedback || feedback.questionId !== question.id) return "";
-  if (question.answer.includes(key)) return "is-correct";
-  if (feedback.selectedAnswers && feedback.selectedAnswers.includes(key)) return "is-wrong";
+  if (hasChoiceAnswer(question, option.text)) return "is-correct";
+  if (feedback.selectedAnswers && hasChoiceAnswer(question, option.text, feedback.selectedAnswers)) return "is-wrong";
   return "";
 }
 
@@ -216,16 +219,16 @@ function renderAnswerFeedback(question) {
   const isFillBlank = question.type === "fill-blank";
   const selected = isFillBlank
     ? (feedback.selectedAnswers || []).map((s, i) => `第${i + 1}空：${s || "未填写"}`).join("、")
-    : (feedback.selectedAnswers || []).join("、") || "未选择";
+    : getChoiceAnswerTexts(question, feedback.selectedAnswers || []).join("、") || "未选择";
   const correctText = isFillBlank
     ? question.answer.map((s, i) => `第${i + 1}空：${s}`).join("、")
-    : question.answer.join("、");
+    : getChoiceAnswerTexts(question).join("、");
 
   const lines = [
     `<strong>${feedback.correct ? "回答正确" : "回答错误"}</strong>`,
     `你的答案：${escapeHtml(selected)}`
   ];
-  if (settings.showAnswer) lines.push(`正确答案：${correctText}`);
+  if (settings.showAnswer) lines.push(`正确答案：${escapeHtml(correctText)}`);
   if (settings.showExplanation && question.explanation) lines.push(`解析：${escapeHtml(question.explanation)}`);
   if (!settings.showAnswer && !settings.showExplanation) lines.push("已记录本题结果，可在上方开关中选择是否显示答案和解析。");
 
@@ -293,7 +296,7 @@ function renderBankList(questions) {
             ${question.options.map((option) => `<p><b>${option.key}.</b> ${escapeHtml(option.text)}</p>`).join("")}
           </div>
           `}
-          <p>答案：${question.answer.join("、")}</p>
+          <p>答案：${escapeHtml((isFillBlank ? question.answer : getChoiceAnswerTexts(question)).join("、"))}</p>
           ${question.explanation ? `<p>解析：${escapeHtml(question.explanation)}</p>` : ""}
         </div>
         <div class="bank-actions">
@@ -338,10 +341,10 @@ function renderQuestionForm(question) {
           <button class="ghost form-add-option" data-form-id="${formId}">+ 添加选项</button>
           <label>答案（勾选正确选项）</label>
           <div class="form-answers" data-form-id="${formId}">
-            ${options.map((opt) => `
+            ${options.map((opt, index) => `
               <label class="form-answer-check">
-                <input type="checkbox" value="${escapeHtml(opt.key)}" ${answer.includes(opt.key) ? "checked" : ""}>
-                <span>${escapeHtml(opt.key)}</span>
+                <input type="checkbox" value="${escapeHtml(opt.text)}" data-option-index="${index}" ${hasChoiceAnswer({ options, answer }, opt.text, answer) ? "checked" : ""}>
+                <span>${escapeHtml(opt.key)}. ${escapeHtml(opt.text)}</span>
               </label>
             `).join("")}
           </div>
