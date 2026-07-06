@@ -295,10 +295,14 @@ async function submitAnswer() {
   course.practice.lastAnswer = runtime.answerFeedback;
   updatePracticeOnly();
 
-  // 答题后自动滚动到操作按钮
-  const actions = document.querySelector(".actions");
-  if (actions) {
-    actions.scrollIntoView({ behavior: "smooth", block: "center" });
+  const willAutoNext = correct && settings.autoNext;
+
+  // 答题后自动滚动到操作按钮（即将自动跳转时跳过，避免对即将被替换的内容做无谓滚动造成抖动）
+  if (!willAutoNext) {
+    const actions = document.querySelector(".actions");
+    if (actions) {
+      actions.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }
 
   // 后台同步服务端（不阻塞 UI）
@@ -321,11 +325,11 @@ async function submitAnswer() {
     }
   }).catch(() => {});
 
-  // 答对自动下一题
-  if (correct && settings.autoNext) {
+  // 答对自动下一题（基本无延迟，仅留极短时间显示对错反馈）
+  if (willAutoNext) {
     setTimeout(() => {
       nextQuestion();
-    }, 1500);
+    }, 200);
   }
 }
 
