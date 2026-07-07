@@ -360,7 +360,8 @@ async function submitAnswer() {
   course.practice.lastAnswer = runtime.answerFeedback;
   updatePracticeOnly();
 
-  const willAutoNext = correct && settings.autoNext;
+  const hasNextQuestionInRound = course.practice.remainingIds.length > 0;
+  const willAutoNext = correct && settings.autoNext && hasNextQuestionInRound;
 
   // 答题后自动滚动到操作按钮（即将自动跳转时跳过，避免对即将被替换的内容做无谓滚动造成抖动）
   if (!willAutoNext) {
