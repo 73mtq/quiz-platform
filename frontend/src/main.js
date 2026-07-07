@@ -6,6 +6,7 @@ import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
 
 const $ = (selector) => document.querySelector(selector);
+const EXAM_MODES = new Set(["exam", "exam-wrong"]);
 
 const sample = `1. 下列哪项活动不是项目（）。
 A. 开发操作系统
@@ -79,6 +80,7 @@ function bind() {
   const submitBtn = $("#submitBtn");
   const prevBtn = $("#prevBtn");
   const nextBtn = $("#nextBtn");
+  const finishExamBtn = $("#finishExamBtn");
 
   if (importTextBtn) importTextBtn.addEventListener("click", importText);
   if (aiBtn) aiBtn.addEventListener("click", recognizeImage);
@@ -89,6 +91,7 @@ function bind() {
   if (submitBtn) submitBtn.addEventListener("click", submitAnswer);
   if (prevBtn) prevBtn.addEventListener("click", prevQuestion);
   if (nextBtn) nextBtn.addEventListener("click", nextQuestion);
+  if (finishExamBtn) finishExamBtn.addEventListener("click", () => finishExam(false));
   if (bankList) {
     bankList.addEventListener("click", deleteQuestion);
     bankList.addEventListener("click", handleBankActions);
@@ -107,6 +110,7 @@ function bind() {
     quizCard.addEventListener("click", (event) => {
       const target = event.target;
       if (target.closest("[data-bookmark]")) handleBookmarkClick(event);
+      if (target.closest("[data-exam-action]")) handleExamAction(event);
     });
   }
 
@@ -115,36 +119,68 @@ function bind() {
     radio.addEventListener("change", async (event) => {
       runtime.practiceMode = event.target.value;
       localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
-      const countInput = $("#practiceCountInput");
-      const countHint = $("#practiceCountHint");
-      if (countInput) countInput.style.display = runtime.practiceMode === "count" ? "" : "none";
-      if (countHint) countHint.style.display = runtime.practiceMode === "count" ? "" : "none";
+      syncPracticeInputs();
       // 切换模式时立即重置
-      runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
+      runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
       clearCurrentAnswer();
       runtime.questionHistory = [];
       renderApp();
       updatePrevBtn();
+      setupExamTimer();
     });
   });
 
   const countInput = $("#practiceCountInput");
   if (countInput) {
     countInput.addEventListener("input", (event) => {
-      runtime.practiceCount = Math.max(1, Number(event.target.value) || 1);
-      localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
+      const value = Math.max(1, Number(event.target.value) || 1);
+      if (runtime.practiceMode === "exam") {
+        runtime.examCount = value;
+        localStorage.setItem("quiz-platform-exam-count", String(runtime.examCount));
+      } else {
+        runtime.practiceCount = value;
+        localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
+      }
     });
     // 数量输入框失焦或回车时重置
     countInput.addEventListener("change", async () => {
-      runtime.practiceCount = Math.max(1, Number(countInput.value) || 1);
-      localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
-      if (runtime.practiceMode === "count") {
-        runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
+      const value = Math.max(1, Number(countInput.value) || 1);
+      if (runtime.practiceMode === "exam") {
+        runtime.examCount = value;
+        localStorage.setItem("quiz-platform-exam-count", String(runtime.examCount));
+      } else {
+        runtime.practiceCount = value;
+        localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
+      }
+      if (runtime.practiceMode === "count" || runtime.practiceMode === "exam") {
+        runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
         clearCurrentAnswer();
         renderApp();
+        setupExamTimer();
       }
     });
   }
+
+  const examMinutesInput = $("#examMinutesInput");
+  if (examMinutesInput) {
+    examMinutesInput.value = runtime.examTimeLimitMinutes;
+    examMinutesInput.addEventListener("input", (event) => {
+      runtime.examTimeLimitMinutes = Math.max(1, Number(event.target.value) || 1);
+      localStorage.setItem("quiz-platform-exam-minutes", String(runtime.examTimeLimitMinutes));
+    });
+    examMinutesInput.addEventListener("change", async () => {
+      runtime.examTimeLimitMinutes = Math.max(1, Number(examMinutesInput.value) || 1);
+      localStorage.setItem("quiz-platform-exam-minutes", String(runtime.examTimeLimitMinutes));
+      if (runtime.practiceMode === "exam") {
+        runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
+        clearCurrentAnswer();
+        renderApp();
+        setupExamTimer();
+      }
+    });
+  }
+
+  syncPracticeInputs();
 }
 
 function switchTab(tabId) {
@@ -153,6 +189,30 @@ function switchTab(tabId) {
   const panel = $(`#${tabId}`);
   if (button) button.classList.add("active");
   if (panel) panel.classList.add("active");
+}
+
+function isExamMode(mode = runtime.practiceMode) {
+  return EXAM_MODES.has(mode);
+}
+
+function activePracticeCount() {
+  return runtime.practiceMode === "exam" ? runtime.examCount : runtime.practiceCount;
+}
+
+function syncPracticeInputs() {
+  const countInput = $("#practiceCountInput");
+  const countHint = $("#practiceCountHint");
+  const examTimeControls = $("#examTimeControls");
+  const examMinutesInput = $("#examMinutesInput");
+  const showCount = runtime.practiceMode === "count" || runtime.practiceMode === "exam";
+
+  if (countInput) {
+    countInput.style.display = showCount ? "" : "none";
+    countInput.value = runtime.practiceMode === "exam" ? runtime.examCount : runtime.practiceCount;
+  }
+  if (countHint) countHint.style.display = showCount ? "" : "none";
+  if (examTimeControls) examTimeControls.style.display = runtime.practiceMode === "exam" ? "" : "none";
+  if (examMinutesInput) examMinutesInput.value = runtime.examTimeLimitMinutes;
 }
 
 async function importText() {
@@ -194,10 +254,11 @@ async function nextQuestion() {
 
   if (!course.practice.remainingIds.length) {
     // 题目用完了，需要重新洗牌 —— 必须等服务端返回新的 remainingIds
-    runtime.state = await api.nextQuestion(runtime.practiceMode, runtime.practiceCount);
+    runtime.state = await api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
     clearCurrentAnswer();
     updatePracticeOnly();
     updatePrevBtn();
+    setupExamTimer();
     return;
   }
 
@@ -212,7 +273,7 @@ async function nextQuestion() {
   updatePrevBtn();
 
   // 后台同步服务端（只同步统计数据，不同步 remainingIds）
-  api.nextQuestion(runtime.practiceMode, runtime.practiceCount).then((state) => {
+  api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes).then((state) => {
     const serverCourse = state?.courses?.find((c) => c.id === activeCourse()?.id);
     if (!serverCourse) return;
     const localCourse = activeCourse();
@@ -222,6 +283,8 @@ async function nextQuestion() {
     localCourse.practice.correctInRound = serverCourse.practice.correctInRound;
     localCourse.practice.totalAnswered = serverCourse.practice.totalAnswered;
     localCourse.practice.totalCorrect = serverCourse.practice.totalCorrect;
+    localCourse.practice.exam = serverCourse.practice.exam;
+    setupExamTimer();
   }).catch(() => {});
 }
 
@@ -318,6 +381,7 @@ async function submitAnswer() {
     localCourse.practice.totalCorrect = serverCourse.practice.totalCorrect;
     localCourse.practice.answeredInRound = serverCourse.practice.answeredInRound;
     localCourse.practice.correctInRound = serverCourse.practice.correctInRound;
+    localCourse.practice.exam = serverCourse.practice.exam;
     // 同步题目级别的统计
     const serverQ = serverCourse.questions.find((q) => q.id === question.id);
     const localQ = localCourse.questions.find((q) => q.id === question.id);
@@ -325,7 +389,9 @@ async function submitAnswer() {
       localQ.wrongCount = serverQ.wrongCount;
       localQ.correctCount = serverQ.correctCount;
       localQ.review = serverQ.review;
+      localQ.memoryTip = serverQ.memoryTip;
     }
+    setupExamTimer();
   }).catch(() => {});
 
   // 答对自动下一题（基本无延迟，仅留极短时间显示对错反馈）
@@ -363,11 +429,92 @@ function updateLocalQuestionReview(question, { correct, selectedAnswers, answere
 }
 
 async function resetRound() {
-  runtime.state = await api.resetRound(runtime.practiceMode, runtime.practiceCount);
+  runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
   clearCurrentAnswer();
   runtime.questionHistory = [];
   renderApp();
   updatePrevBtn();
+  setupExamTimer();
+}
+
+async function finishExam(timedOut = false) {
+  if (!isExamMode()) return;
+  if (runtime.finishingExam) return;
+  runtime.finishingExam = true;
+  try {
+    const result = await api.finishExam(timedOut);
+    runtime.state = result.state;
+    clearCurrentAnswer();
+    runtime.questionHistory = [];
+    renderApp();
+    updatePrevBtn();
+  } finally {
+    runtime.finishingExam = false;
+    setupExamTimer();
+  }
+}
+
+async function handleExamAction(event) {
+  const action = event.target.closest("[data-exam-action]")?.dataset.examAction;
+  if (!action) return;
+
+  if (action === "review-wrong") {
+    runtime.practiceMode = "exam-wrong";
+    localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
+    runtime.state = await api.resetRound("exam-wrong", runtime.practiceCount, runtime.examTimeLimitMinutes);
+    clearCurrentAnswer();
+    runtime.questionHistory = [];
+    renderApp();
+    updatePrevBtn();
+    setupExamTimer();
+  }
+}
+
+function setupExamTimer() {
+  if (runtime.examTimerId) {
+    clearInterval(runtime.examTimerId);
+    runtime.examTimerId = null;
+  }
+  updateExamTimerText();
+  const course = activeCourse();
+  const exam = course.practice.exam;
+  if (!isExamMode(course.practice.mode) || !exam?.startedAt || exam.finishedAt) {
+    toggleFinishExamButton(false);
+    return;
+  }
+
+  toggleFinishExamButton(true);
+  runtime.examTimerId = setInterval(() => {
+    const remaining = updateExamTimerText();
+    if (remaining <= 0) finishExam(true);
+  }, 1000);
+}
+
+function updateExamTimerText() {
+  const timer = $("#examTimer");
+  const course = activeCourse();
+  const exam = course.practice.exam;
+  if (!timer || !isExamMode(course.practice.mode) || !exam?.startedAt || exam.finishedAt) return Infinity;
+
+  const remaining = remainingExamMs(exam);
+  const seconds = Math.max(0, Math.ceil(remaining / 1000));
+  const minutesPart = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const secondsPart = String(seconds % 60).padStart(2, "0");
+  timer.textContent = `${minutesPart}:${secondsPart}`;
+  timer.classList.toggle("is-danger", remaining <= 60_000);
+  return remaining;
+}
+
+function remainingExamMs(exam) {
+  const started = Date.parse(exam.startedAt || "");
+  if (!started) return Infinity;
+  const limitMs = (Number(exam.timeLimitMinutes) || runtime.examTimeLimitMinutes || 20) * 60_000;
+  return started + limitMs - Date.now();
+}
+
+function toggleFinishExamButton(show) {
+  const btn = $("#finishExamBtn");
+  if (btn) btn.style.display = show ? "" : "none";
 }
 
 async function handleReviewActions(event) {
@@ -379,12 +526,13 @@ async function handleReviewActions(event) {
     localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
     const modeRadio = document.querySelector("input[name='practiceMode'][value='wrong']");
     if (modeRadio) modeRadio.checked = true;
-    runtime.state = await api.resetRound("wrong", runtime.practiceCount);
+    runtime.state = await api.resetRound("wrong", runtime.practiceCount, runtime.examTimeLimitMinutes);
     clearCurrentAnswer();
     runtime.questionHistory = [];
     switchTab("practicePanel");
     renderApp();
     updatePrevBtn();
+    setupExamTimer();
     return;
   }
 
@@ -504,13 +652,14 @@ function getFormData(formId) {
 
   const stem = form.querySelector(".form-stem").value.trim();
   const explanation = form.querySelector(".form-explanation").value.trim();
+  const memoryTip = form.querySelector(".form-memory-tip")?.value.trim() || "";
   const typeSelect = form.querySelector(".form-type");
   const type = typeSelect ? typeSelect.value : "choice";
 
   if (type === "fill-blank") {
     const answerText = form.querySelector(".form-fill-blank-answer").value.trim();
     const answer = answerText.split(/[；;]/).map((s) => s.trim()).filter(Boolean);
-    return { type: "fill-blank", stem, options: [], answer, explanation };
+    return { type: "fill-blank", stem, options: [], answer, explanation, memoryTip };
   }
 
   const optionRows = form.querySelectorAll(".form-option-row");
@@ -524,7 +673,7 @@ function getFormData(formId) {
   const answerCheckboxes = form.querySelectorAll(".form-answers input[type='checkbox']:checked");
   const answer = Array.from(answerCheckboxes).map((cb) => cb.value);
 
-  return { type: "choice", stem, options, answer, explanation };
+  return { type: "choice", stem, options, answer, explanation, memoryTip };
 }
 
 function refreshOptionCheckboxes(formId, options) {
@@ -725,15 +874,17 @@ try {
   const countInput = document.querySelector("#practiceCountInput");
   const countHint = document.querySelector("#practiceCountHint");
   if (countInput) {
-    countInput.style.display = runtime.practiceMode === "count" ? "" : "none";
-    countInput.value = course.practice.count || runtime.practiceCount;
+    runtime.practiceCount = course.practice.count || runtime.practiceCount;
+    runtime.examCount = course.practice.mode === "exam" ? course.practice.count || runtime.examCount : runtime.examCount;
   }
-  if (countHint) countHint.style.display = runtime.practiceMode === "count" ? "" : "none";
+  if (course.practice.exam?.timeLimitMinutes) runtime.examTimeLimitMinutes = course.practice.exam.timeLimitMinutes;
+  syncPracticeInputs();
 
   // 初始化键盘快捷键
   bindKeyboardShortcuts();
 
   renderApp();
+  setupExamTimer();
 } catch (err) {
   document.querySelector(".app").innerHTML = `<div style="padding:40px;color:red;font-size:18px;"><h2>页面加载出错</h2><pre>${err.message}\n${err.stack}</pre><p>请截图发给开发者。</p></div>`;
 }

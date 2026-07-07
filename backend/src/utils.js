@@ -141,8 +141,9 @@ export function normalizeQuestion(question) {
     answer: type === "fill-blank"
       ? (question.answer || []).map((item) => String(item).trim()).filter(Boolean)
       : getChoiceAnswerTexts({ options }, question.answer || []),
-    explanation: String(question.explanation || "").trim(),
-    wrongCount: Number(question.wrongCount) || 0,
+	    explanation: String(question.explanation || "").trim(),
+	    memoryTip: String(question.memoryTip || "").trim(),
+	    wrongCount: Number(question.wrongCount) || 0,
     correctCount: Number(question.correctCount) || 0,
     bookmarked: Boolean(question.bookmarked),
     review: normalizeReviewState(question.review),

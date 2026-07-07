@@ -15,6 +15,10 @@ export const runtime = {
   creatingQuestion: false,
   practiceMode: localStorage.getItem("quiz-platform-practice-mode") || "all",
   practiceCount: Number(localStorage.getItem("quiz-platform-practice-count")) || 10,
+  examCount: Number(localStorage.getItem("quiz-platform-exam-count")) || 30,
+  examTimeLimitMinutes: Number(localStorage.getItem("quiz-platform-exam-minutes")) || 20,
+  examTimerId: null,
+  finishingExam: false,
   bankShowWrongOnly: false,
   bankShowBookmarkedOnly: false,
   questionHistory: [] // 上一题历史栈
