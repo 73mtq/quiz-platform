@@ -5,6 +5,7 @@ import { createRouter } from "./routes.js";
 import { buildStudyNotes, stripMemoryTipLabel } from "./services/StudyNoteGenerator.js";
 import { normalizeQuestion } from "./utils.js";
 import {
+  applyLocalPracticeConfig,
   examQuestionTotal,
   isPracticeRoundComplete,
   roundQuestionTotal,
@@ -396,6 +397,46 @@ test("practice round helpers distinguish reset start from submitted finish", () 
   assert.equal(roundQuestionTotal(submittedFinish, 2), 2);
   assert.equal(roundRemainingCount(submittedFinish, 2), 0);
   assert.equal(isPracticeRoundComplete(submittedFinish, 2), true);
+});
+
+test("local practice config stages mode changes without carrying old round state", () => {
+  const practice = {
+    mode: "all",
+    count: 10,
+    remainingIds: ["old-next"],
+    answeredInRound: 4,
+    correctInRound: 3,
+    currentQuestionId: "old-current",
+    lastAnswer: { questionId: "old-current", correct: true },
+    exam: {
+      timeLimitMinutes: 20,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      finishedAt: "",
+      questionIds: ["old-current", "old-next"],
+      answers: [{ questionId: "old-current", correct: true }],
+      lastWrongIds: ["last-wrong"],
+      lastSummary: { wrongIds: ["last-wrong"] }
+    }
+  };
+
+  applyLocalPracticeConfig(practice, { mode: "exam", count: 30, timeLimitMinutes: 15 });
+
+  assert.equal(practice.mode, "exam");
+  assert.equal(practice.count, 30);
+  assert.deepEqual(practice.remainingIds, []);
+  assert.equal(practice.answeredInRound, 0);
+  assert.equal(practice.correctInRound, 0);
+  assert.equal(practice.currentQuestionId, null);
+  assert.equal(practice.lastAnswer, null);
+  assert.equal(practice.exam.timeLimitMinutes, 15);
+  assert.equal(practice.exam.startedAt, "");
+  assert.deepEqual(practice.exam.questionIds, []);
+  assert.deepEqual(practice.exam.answers, []);
+  assert.deepEqual(practice.exam.lastWrongIds, ["last-wrong"]);
+
+  applyLocalPracticeConfig(practice, { mode: "all", count: 30, timeLimitMinutes: 15 });
+  assert.equal(practice.mode, "all");
+  assert.equal(practice.count, 0);
 });
 
 test("finish-exam returns summary and exam-wrong uses last wrong ids", async () => {

@@ -101,10 +101,11 @@ function renderPractice(course) {
   const mode = practice.mode || "all";
   const count = practice.count || 0;
   const examTotal = examQuestionTotal(practice, runtime.examCount);
-  const roundTotal = isExamMode(mode) ? examTotal : roundQuestionTotal(practice, count || runtime.practiceCount);
+  const plannedTotal = plannedPracticeTotal(course, practice, mode, count, examTotal);
+  const roundTotal = isExamMode(mode) ? examTotal || plannedTotal : roundQuestionTotal(practice, plannedTotal);
   const answeredCount = roundAnsweredCount(practice, roundTotal);
   const remainingCount = isExamMode(mode)
-    ? examRemainingCount(practice, runtime.examCount)
+    ? examRemainingCount(practice, plannedTotal)
     : roundRemainingCount(practice, roundTotal);
   const roundComplete = isPracticeRoundComplete(practice, roundTotal);
 
@@ -203,6 +204,14 @@ function renderExamStatus(practice) {
       <span>剩余时间 · ${answered}/${total} 题</span>
     </div>
   `;
+}
+
+function plannedPracticeTotal(course, practice, mode, count, examTotal) {
+  if (mode === "exam") return examTotal || count || runtime.examCount || 0;
+  if (mode === "exam-wrong") return examTotal || practice.exam?.lastWrongIds?.length || 0;
+  if (mode === "count") return count || runtime.practiceCount || 0;
+  if (mode === "wrong") return course.questions.filter(isPendingWrongQuestion).length;
+  return course.questions.length;
 }
 
 function renderRoundBoundary({ practice, mode, question, total, answered, remaining, complete }) {

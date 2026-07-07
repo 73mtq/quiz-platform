@@ -49,6 +49,34 @@ export function isPracticeRoundStarted(practice = {}) {
   return Boolean(practice.currentQuestionId) || (Number(practice.answeredInRound) || 0) > 0;
 }
 
+export function applyLocalPracticeConfig(practice = {}, { mode = "all", count = 0, timeLimitMinutes = 20 } = {}) {
+  practice.mode = mode;
+  if ((mode === "count" || mode === "exam") && Number(count) > 0) {
+    practice.count = Number(count);
+  } else if (mode !== "count" && mode !== "exam") {
+    practice.count = 0;
+  }
+  practice.remainingIds = [];
+  practice.answeredInRound = 0;
+  practice.correctInRound = 0;
+  practice.currentQuestionId = null;
+  practice.lastAnswer = null;
+
+  if (mode === "exam" || mode === "exam-wrong") {
+    practice.exam = {
+      timeLimitMinutes: Number(timeLimitMinutes) || 20,
+      startedAt: "",
+      finishedAt: "",
+      questionIds: [],
+      answers: [],
+      lastWrongIds: practice.exam?.lastWrongIds || [],
+      lastSummary: mode === "exam-wrong" ? practice.exam?.lastSummary || null : null
+    };
+  }
+
+  return practice;
+}
+
 export function stripMemoryTipLabel(value = "") {
   return String(value || "")
     .trim()

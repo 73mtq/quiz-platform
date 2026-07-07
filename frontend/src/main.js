@@ -4,7 +4,7 @@ import { renderApp, renderImportResult, updatePracticeOnly } from "./ui/render.j
 import { getChoiceAnswerTexts, isChoiceAnswerCorrect, normalizeChoiceText } from "./utils/answers.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
-import { isPracticeRoundComplete, shouldAutoNextAfterSubmit } from "./utils/practiceFlow.js";
+import { applyLocalPracticeConfig, isPracticeRoundComplete, shouldAutoNextAfterSubmit } from "./utils/practiceFlow.js";
 
 const $ = (selector) => document.querySelector(selector);
 const EXAM_MODES = new Set(["exam", "exam-wrong"]);
@@ -118,17 +118,11 @@ function bind() {
 
   // 刷题模式切换
   document.querySelectorAll("input[name='practiceMode']").forEach((radio) => {
-    radio.addEventListener("change", async (event) => {
+    radio.addEventListener("change", (event) => {
       runtime.practiceMode = event.target.value;
       localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
       syncPracticeInputs();
-      // 切换模式时立即重置
-      runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
-      clearCurrentAnswer();
-      runtime.questionHistory = [];
-      renderApp();
-      updatePrevBtn();
-      setupExamTimer();
+      stageLocalPracticeRound();
     });
   });
 
@@ -145,7 +139,7 @@ function bind() {
       }
     });
     // 数量输入框失焦或回车时重置
-    countInput.addEventListener("change", async () => {
+    countInput.addEventListener("change", () => {
       const value = Math.max(1, Number(countInput.value) || 1);
       if (runtime.practiceMode === "exam") {
         runtime.examCount = value;
@@ -155,10 +149,7 @@ function bind() {
         localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
       }
       if (runtime.practiceMode === "count" || runtime.practiceMode === "exam") {
-        runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
-        clearCurrentAnswer();
-        renderApp();
-        setupExamTimer();
+        stageLocalPracticeRound();
       }
     });
   }
@@ -170,14 +161,11 @@ function bind() {
       runtime.examTimeLimitMinutes = Math.max(1, Number(event.target.value) || 1);
       localStorage.setItem("quiz-platform-exam-minutes", String(runtime.examTimeLimitMinutes));
     });
-    examMinutesInput.addEventListener("change", async () => {
+    examMinutesInput.addEventListener("change", () => {
       runtime.examTimeLimitMinutes = Math.max(1, Number(examMinutesInput.value) || 1);
       localStorage.setItem("quiz-platform-exam-minutes", String(runtime.examTimeLimitMinutes));
       if (runtime.practiceMode === "exam") {
-        runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
-        clearCurrentAnswer();
-        renderApp();
-        setupExamTimer();
+        stageLocalPracticeRound();
       }
     });
   }
@@ -215,6 +203,20 @@ function syncPracticeInputs() {
   if (countHint) countHint.style.display = showCount ? "" : "none";
   if (examTimeControls) examTimeControls.style.display = runtime.practiceMode === "exam" ? "" : "none";
   if (examMinutesInput) examMinutesInput.value = runtime.examTimeLimitMinutes;
+}
+
+function stageLocalPracticeRound() {
+  const course = activeCourse();
+  applyLocalPracticeConfig(course.practice, {
+    mode: runtime.practiceMode,
+    count: activePracticeCount(),
+    timeLimitMinutes: runtime.examTimeLimitMinutes
+  });
+  clearCurrentAnswer();
+  runtime.questionHistory = [];
+  renderApp();
+  updatePrevBtn();
+  setupExamTimer();
 }
 
 async function importText() {
@@ -452,6 +454,7 @@ function updateLocalQuestionReview(question, { correct, selectedAnswers, answere
 }
 
 async function resetRound() {
+  stageLocalPracticeRound();
   runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
   clearCurrentAnswer();
   runtime.questionHistory = [];
