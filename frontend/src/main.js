@@ -4,6 +4,7 @@ import { renderApp, renderImportResult, updatePracticeOnly } from "./ui/render.j
 import { getChoiceAnswerTexts, isChoiceAnswerCorrect, normalizeChoiceText } from "./utils/answers.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
+import { shouldAutoNextAfterSubmit } from "./utils/practiceFlow.js";
 
 const $ = (selector) => document.querySelector(selector);
 const EXAM_MODES = new Set(["exam", "exam-wrong"]);
@@ -251,6 +252,18 @@ async function deleteCourse() {
 async function nextQuestion() {
   const course = activeCourse();
   const prevId = course.practice.currentQuestionId;
+  const mode = course.practice.mode || runtime.practiceMode;
+
+  if (isExamMode(mode)) {
+    if (prevId) runtime.questionHistory.push(prevId);
+    const count = mode === "exam" ? runtime.examCount : runtime.practiceCount;
+    runtime.state = await api.nextQuestion(mode, count, runtime.examTimeLimitMinutes);
+    clearCurrentAnswer();
+    updatePracticeOnly();
+    updatePrevBtn();
+    setupExamTimer();
+    return;
+  }
 
   if (!course.practice.remainingIds.length) {
     // 题目用完了，需要重新洗牌 —— 必须等服务端返回新的 remainingIds
@@ -360,8 +373,11 @@ async function submitAnswer() {
   course.practice.lastAnswer = runtime.answerFeedback;
   updatePracticeOnly();
 
-  const hasNextQuestionInRound = course.practice.remainingIds.length > 0;
-  const willAutoNext = correct && settings.autoNext && hasNextQuestionInRound;
+  const willAutoNext = shouldAutoNextAfterSubmit({
+    correct,
+    autoNext: settings.autoNext,
+    practice: course.practice
+  });
 
   // 答题后自动滚动到操作按钮（即将自动跳转时跳过，避免对即将被替换的内容做无谓滚动造成抖动）
   if (!willAutoNext) {
@@ -468,6 +484,11 @@ async function handleExamAction(event) {
     renderApp();
     updatePrevBtn();
     setupExamTimer();
+    return;
+  }
+
+  if (action === "finish") {
+    await finishExam(false);
   }
 }
 

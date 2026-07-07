@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
 import { createRouter } from "./routes.js";
-import { buildStudyNotes } from "./services/StudyNoteGenerator.js";
+import { buildStudyNotes, stripMemoryTipLabel } from "./services/StudyNoteGenerator.js";
 import { normalizeQuestion } from "./utils.js";
+import {
+  examQuestionTotal,
+  shouldAutoNextAfterSubmit,
+  stripMemoryTipLabel as stripRenderedMemoryTipLabel
+} from "../../frontend/src/utils/practiceFlow.js";
 
 function emptyPractice() {
   return {
@@ -67,6 +72,29 @@ function choiceQuestion(overrides) {
     answer: ["Alpha"],
     review: {},
     ...overrides
+  };
+}
+
+function createLargeExamState(total = 40) {
+  const questions = Array.from({ length: total }, (_, index) => choiceQuestion({
+    id: `q-${index + 1}`,
+    stem: `question ${index + 1}`,
+    wrongCount: index < 5 ? 1 : 0,
+    correctCount: 0
+  }));
+  questions[10].bookmarked = true;
+
+  return {
+    activeCourseId: "course-large",
+    courses: [
+      {
+        id: "course-large",
+        name: "large course",
+        questions,
+        practice: emptyPractice(),
+        createdAt: "2026-01-01T00:00:00.000Z"
+      }
+    ]
   };
 }
 
@@ -259,9 +287,26 @@ test("study note generator creates explanation and memory tip", () => {
   const multiNotes = buildStudyNotes(multi, "测试");
 
   assert.match(fillNotes.explanation, /建设中国特色社会主义法治体系/);
-  assert.match(fillNotes.memoryTip, /速记/);
+  assert.doesNotMatch(fillNotes.memoryTip, /^速记[：:]/);
   assert.match(multiNotes.explanation, /多选/);
   assert.match(multiNotes.memoryTip, /Alpha\+Beta/);
+});
+
+test("study note generator strips duplicated memory labels and expands short cues", () => {
+  assert.equal(stripMemoryTipLabel("速记：速记：保证 -> 作风优良"), "保证 -> 作风优良");
+  assert.equal(stripRenderedMemoryTipLabel("速记：速记：保证 -> 作风优良"), "保证 -> 作风优良");
+
+  const notes = buildStudyNotes(normalizeQuestion({
+    id: "short-cue",
+    type: "fill-blank",
+    stem: "党在新时代的强军目标中，（）是保证。",
+    options: [],
+    answer: ["作风优良"]
+  }), "习思想");
+
+  assert.doesNotMatch(notes.memoryTip, /^速记[：:]/);
+  assert.doesNotMatch(notes.memoryTip, /速记[：:]\s*速记[：:]/);
+  assert.match(notes.memoryTip, /是保证/);
 });
 
 test("exam reset prioritizes pending wrong questions", async () => {
@@ -273,6 +318,54 @@ test("exam reset prioritizes pending wrong questions", async () => {
   assert.deepEqual(roundIds.slice(0, 2), ["wrong-then-correct", "wrong-only"]);
   assert.equal(roundIds.length, 3);
   assert.equal(course.practice.exam.timeLimitMinutes, 20);
+});
+
+test("exam reset creates 30 unique question ids when enough questions exist", async () => {
+  await withServer(createLargeExamState(40), async (request) => {
+    const state = await request("/api/practice/reset-round", { mode: "exam", count: 30, timeLimitMinutes: 20 });
+    const questionIds = state.courses[0].practice.exam.questionIds;
+
+    assert.equal(questionIds.length, 30);
+    assert.equal(new Set(questionIds).size, 30);
+    assert.deepEqual(questionIds.slice(0, 5), ["q-1", "q-2", "q-3", "q-4", "q-5"]);
+  });
+});
+
+test("exam next consumes one server question per call without early exhaustion", async () => {
+  await withServer(createLargeExamState(40), async (request) => {
+    await request("/api/practice/reset-round", { mode: "exam", count: 30, timeLimitMinutes: 20 });
+
+    const seen = [];
+    for (let i = 0; i < 30; i += 1) {
+      const state = await request("/api/practice/next", { mode: "exam", count: 30, timeLimitMinutes: 20 });
+      const practice = state.courses[0].practice;
+      assert.ok(practice.currentQuestionId, `missing current question at step ${i + 1}`);
+      seen.push(practice.currentQuestionId);
+      assert.equal(examQuestionTotal(practice, 30), 30);
+    }
+
+    assert.equal(new Set(seen).size, 30);
+
+    const exhausted = await request("/api/practice/next", { mode: "exam", count: 30, timeLimitMinutes: 20 });
+    const practice = exhausted.courses[0].practice;
+    assert.equal(practice.currentQuestionId, null);
+    assert.equal(practice.remainingIds.length, 0);
+    assert.equal(examQuestionTotal(practice, 30), 30);
+  });
+});
+
+test("auto next is disabled on the final question", () => {
+  assert.equal(shouldAutoNextAfterSubmit({
+    correct: true,
+    autoNext: true,
+    practice: { remainingIds: [] }
+  }), false);
+
+  assert.equal(shouldAutoNextAfterSubmit({
+    correct: true,
+    autoNext: true,
+    practice: { remainingIds: ["next-id"] }
+  }), true);
 });
 
 test("finish-exam returns summary and exam-wrong uses last wrong ids", async () => {

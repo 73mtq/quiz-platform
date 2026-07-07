@@ -721,11 +721,27 @@ textarea::placeholder {
   justify-content: space-between;
   align-items: flex-start;
   gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
 }
 
 .quiz-card-header h3 {
   flex: 1;
   margin-bottom: 0;
+}
+
+.option-list {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-light);
+}
+
+#answerResult:not(:empty) {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-light);
 }
 
 .bookmark-btn {
@@ -794,7 +810,7 @@ textarea::placeholder {
 
 /* ---- 答题反馈 — 有目的的入场动画 ---- */
 .correct, .wrong {
-  margin-top: 14px;
+  margin-top: 0;
   padding: 12px 14px;
   border-radius: var(--r-sm);
   font-size: 13px;
@@ -825,7 +841,9 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 12px 0;
+  margin: 0 0 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-light);
 }
 
 .fill-blank-input {
@@ -857,6 +875,17 @@ textarea::placeholder {
   font-weight: 700;
   font-size: 15px;
   text-align: center;
+}
+
+.exam-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 18px 0;
+}
+
+.exam-empty-state .empty {
+  padding: 0;
 }
 
 /* ---- 复习分析 ---- */

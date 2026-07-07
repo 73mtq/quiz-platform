@@ -1,6 +1,7 @@
 import { activeCourse, currentQuestion, runtime, settings } from "../state/appState.js";
 import { getChoiceAnswerTexts, hasChoiceAnswer, normalizeChoiceText } from "../utils/answers.js";
 import { escapeHtml, rate } from "../utils/format.js";
+import { examQuestionTotal, examRemainingCount, stripMemoryTipLabel } from "../utils/practiceFlow.js";
 import { analyzeReview, getQuestionTags, isMasteredWrongQuestion, isPendingWrongQuestion, sortWrongQuestions } from "../utils/review.js";
 
 /** 随机打乱数组（Fisher-Yates 洗牌算法） */
@@ -90,6 +91,10 @@ function renderPractice(course) {
   const question = currentQuestion();
   const mode = practice.mode || "all";
   const count = practice.count || 0;
+  const examTotal = examQuestionTotal(practice, runtime.examCount);
+  const remainingCount = isExamMode(mode)
+    ? examRemainingCount(practice, runtime.examCount)
+    : practice.remainingIds.length;
 
   // 同步模式选择 UI
   const countInput = $("#practiceCountInput");
@@ -104,7 +109,7 @@ function renderPractice(course) {
   if (examTimeControls) examTimeControls.style.display = runtime.practiceMode === "exam" ? "" : "none";
 
   const modeLabel = mode === "exam"
-    ? `限时模拟 ${practice.exam?.questionIds?.length || count || runtime.examCount} 题`
+    ? `限时模拟 ${examTotal || count || runtime.examCount} 题`
     : mode === "exam-wrong"
       ? "本轮错题复盘"
       : mode === "wrong"
@@ -112,7 +117,7 @@ function renderPractice(course) {
         : mode === "count"
           ? `指定 ${count} 题`
           : "全部题目";
-  $("#roundInfo").textContent = `${course.name}：${modeLabel}，剩余 ${practice.remainingIds.length} 题`;
+  $("#roundInfo").textContent = `${course.name}：${modeLabel}，剩余 ${remainingCount} 题`;
   $("#accuracy").innerHTML = `
     <div><strong>${rate(practice.correctInRound, practice.answeredInRound)}</strong><span>正确率 ${practice.correctInRound}/${practice.answeredInRound}</span></div>
     ${isExamMode(mode) ? renderExamStatus(practice) : ""}
@@ -124,7 +129,12 @@ function renderPractice(course) {
       return;
     }
     if (isExamMode(mode) && practice.exam?.startedAt && !practice.exam?.finishedAt && practice.exam?.questionIds?.length) {
-      $("#quizCard").innerHTML = `<p class="empty round-done">本轮题目已答完，点击“结束模拟”查看总结。</p>`;
+      $("#quizCard").innerHTML = `
+        <section class="exam-empty-state">
+          <p class="empty round-done">本轮题目已用完，结束模拟查看总结。</p>
+          <button data-exam-action="finish">结束模拟</button>
+        </section>
+      `;
       animateQuizCard();
       return;
     }
@@ -164,8 +174,8 @@ function renderPractice(course) {
 
 function renderExamStatus(practice) {
   const exam = practice.exam || {};
-  const total = exam.questionIds?.length || practice.count || runtime.examCount || 0;
-  const answered = practice.answeredInRound || 0;
+  const total = examQuestionTotal(practice, runtime.examCount);
+  const answered = Math.min(total, practice.answeredInRound || 0);
   const timer = exam.finishedAt ? "已结束" : "--:--";
   return `
     <div class="exam-stat">
@@ -212,17 +222,20 @@ function renderChoicePractice(question) {
   const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
   const bookmarked = question.bookmarked ? "active" : "";
   const options = settings.shuffleOptions ? shuffleArray(question.options) : question.options;
+  const stem = String(question.stem || "").trim() || "题干缺失";
   $("#quizCard").innerHTML = `
     <div class="quiz-card-header">
-      <h3>${escapeHtml(question.stem)} ${multiHint} ${wrongTag}</h3>
+      <h3>${escapeHtml(stem)} ${multiHint} ${wrongTag}</h3>
       <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏">★</button>
     </div>
-    ${options.map((option) => `
-      <label class="option ${optionClass(question, option)}">
-        <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback ? "disabled" : ""}>
-        <span><b>${option.key}.</b> ${escapeHtml(option.text)}</span>
-      </label>
-    `).join("")}
+    <div class="option-list">
+      ${options.map((option) => `
+        <label class="option ${optionClass(question, option)}">
+          <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback ? "disabled" : ""}>
+          <span><b>${option.key}.</b> ${escapeHtml(option.text)}</span>
+        </label>
+      `).join("")}
+    </div>
     <div id="answerResult">${renderAnswerFeedback(question)}</div>
   `;
   document.querySelectorAll("input[name='answer']").forEach((input) => {
@@ -250,6 +263,7 @@ function renderFillBlankPractice(question) {
   const wrongCount = question.wrongCount || 0;
   const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
   const bookmarked = question.bookmarked ? "active" : "";
+  const stem = String(question.stem || "").trim() || "题干缺失";
 
   const blanksHtml = Array.from({ length: blankCount }, (_, i) => {
     const val = runtime.selectedAnswers[i] || "";
@@ -258,7 +272,7 @@ function renderFillBlankPractice(question) {
 
   $("#quizCard").innerHTML = `
     <div class="quiz-card-header">
-      <h3>${escapeHtml(question.stem)} ${blankHint} ${wrongTag}</h3>
+      <h3>${escapeHtml(stem)} ${blankHint} ${wrongTag}</h3>
       <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏">★</button>
     </div>
     <div class="fill-blank-area">${blanksHtml}</div>
@@ -301,7 +315,8 @@ function renderAnswerFeedback(question) {
   ];
   if (settings.showAnswer) lines.push(`正确答案：${escapeHtml(correctText)}`);
   if (settings.showExplanation && question.explanation) lines.push(`解析：${escapeHtml(question.explanation)}`);
-  if (settings.showExplanation && question.memoryTip) lines.push(`速记：${escapeHtml(question.memoryTip)}`);
+  const memoryTip = stripMemoryTipLabel(question.memoryTip);
+  if (settings.showExplanation && memoryTip) lines.push(`速记：${escapeHtml(memoryTip)}`);
   if (!settings.showAnswer && !settings.showExplanation) lines.push("已记录本题结果，可在上方开关中选择是否显示答案和解析。");
 
   return `<div class="${feedback.correct ? "correct" : "wrong"}">${lines.join("<br>")}</div>`;
@@ -524,7 +539,7 @@ function renderBankList(questions) {
           <p>答案：${escapeHtml(renderAnswerText(question))}</p>
           ${question.review?.lastSelectedAnswers?.length ? `<p>上次选择：${escapeHtml(renderAnswerText(question, question.review.lastSelectedAnswers))}</p>` : ""}
           ${question.explanation ? `<p>解析：${escapeHtml(question.explanation)}</p>` : ""}
-          ${question.memoryTip ? `<p>速记：${escapeHtml(question.memoryTip)}</p>` : ""}
+          ${stripMemoryTipLabel(question.memoryTip) ? `<p>速记：${escapeHtml(stripMemoryTipLabel(question.memoryTip))}</p>` : ""}
         </div>
         <div class="bank-actions">
           <button class="ghost" data-edit="${question.id}">编辑</button>
