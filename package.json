@@ -11,7 +11,8 @@
     "check": "node --check backend/src/server.js",
     "migrate:quiz-maker": "node backend/src/scripts/migrate-from-quiz-maker.js",
     "migrate:to-db": "node backend/src/scripts/migrate-to-db.js",
-    "import:txt": "node backend/src/scripts/import-txt-files.js"
+    "import:txt": "node backend/src/scripts/import-txt-files.js",
+    "generate:study-notes": "node backend/src/scripts/generate-study-notes.js"
   },
   "dependencies": {
     "pg": "^8.22.0"

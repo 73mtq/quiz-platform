@@ -74,10 +74,7 @@ export class SqlQuizRepository {
       questions: (course.questions || course.bank || [])
         .map(normalizeQuestion)
         .filter((question) => !validateQuestion(question)),
-      practice: {
-        ...this.emptyPractice(),
-        ...(course.practice || course.round?.stats || {})
-      },
+      practice: this.normalizePractice(course.practice || course.round?.stats || {}),
       createdAt: course.createdAt || new Date().toISOString()
     }));
 
@@ -116,6 +113,7 @@ export class SqlQuizRepository {
     if (data.options !== undefined) merged.options = data.options;
     if (data.answer !== undefined) merged.answer = data.answer;
     if (data.explanation !== undefined) merged.explanation = data.explanation;
+    if (data.memoryTip !== undefined) merged.memoryTip = data.memoryTip;
 
     const normalized = normalizeQuestion(merged);
     normalized.updatedAt = new Date().toISOString();
@@ -137,7 +135,34 @@ export class SqlQuizRepository {
       currentQuestionId: null,
       lastAnswer: null,
       mode: "all",
-      count: 0
+      count: 0,
+      exam: this.emptyExam()
+    };
+  }
+
+  emptyExam() {
+    return {
+      timeLimitMinutes: 20,
+      startedAt: "",
+      finishedAt: "",
+      questionIds: [],
+      answers: [],
+      lastWrongIds: [],
+      lastSummary: null
+    };
+  }
+
+  normalizePractice(practice = {}) {
+    const base = {
+      ...this.emptyPractice(),
+      ...practice
+    };
+    return {
+      ...base,
+      exam: {
+        ...this.emptyExam(),
+        ...(practice.exam || {})
+      }
     };
   }
 

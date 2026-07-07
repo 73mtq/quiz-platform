@@ -14,6 +14,7 @@ function shuffleArray(arr) {
 }
 
 const $ = (selector) => document.querySelector(selector);
+const EXAM_MODES = new Set(["exam", "exam-wrong"]);
 
 /** 给答题卡片添加切换动画（仅桌面端，移动端跳过以提升性能） */
 function animateQuizCard() {
@@ -93,18 +94,40 @@ function renderPractice(course) {
   // 同步模式选择 UI
   const countInput = $("#practiceCountInput");
   const countHint = $("#practiceCountHint");
+  const examTimeControls = $("#examTimeControls");
+  const showCount = runtime.practiceMode === "count" || runtime.practiceMode === "exam";
   if (countInput) {
-    countInput.style.display = runtime.practiceMode === "count" ? "" : "none";
-    if (runtime.practiceMode === "count" && runtime.practiceCount > 0) countInput.value = runtime.practiceCount;
+    countInput.style.display = showCount ? "" : "none";
+    countInput.value = runtime.practiceMode === "exam" ? runtime.examCount : runtime.practiceCount;
   }
-  if (countHint) countHint.style.display = runtime.practiceMode === "count" ? "" : "none";
+  if (countHint) countHint.style.display = showCount ? "" : "none";
+  if (examTimeControls) examTimeControls.style.display = runtime.practiceMode === "exam" ? "" : "none";
 
-  const modeLabel = mode === "wrong" ? "错题重做" : mode === "count" ? `指定 ${count} 题` : "全部题目";
+  const modeLabel = mode === "exam"
+    ? `限时模拟 ${practice.exam?.questionIds?.length || count || runtime.examCount} 题`
+    : mode === "exam-wrong"
+      ? "本轮错题复盘"
+      : mode === "wrong"
+        ? "错题重做"
+        : mode === "count"
+          ? `指定 ${count} 题`
+          : "全部题目";
   $("#roundInfo").textContent = `${course.name}：${modeLabel}，剩余 ${practice.remainingIds.length} 题`;
   $("#accuracy").innerHTML = `
     <div><strong>${rate(practice.correctInRound, practice.answeredInRound)}</strong><span>正确率 ${practice.correctInRound}/${practice.answeredInRound}</span></div>
+    ${isExamMode(mode) ? renderExamStatus(practice) : ""}
   `;
   if (!question) {
+    if (isExamMode(mode) && practice.exam?.lastSummary) {
+      $("#quizCard").innerHTML = renderExamSummary(practice.exam.lastSummary);
+      animateQuizCard();
+      return;
+    }
+    if (isExamMode(mode) && practice.exam?.startedAt && !practice.exam?.finishedAt && practice.exam?.questionIds?.length) {
+      $("#quizCard").innerHTML = `<p class="empty round-done">本轮题目已答完，点击“结束模拟”查看总结。</p>`;
+      animateQuizCard();
+      return;
+    }
     // 指定数量模式下刷完本轮显示完成提示
     if (mode === "count" && practice.answeredInRound > 0) {
       $("#quizCard").innerHTML = `<p class="empty round-done">${practice.answeredInRound} 题已完成！正确率 ${rate(practice.correctInRound, practice.answeredInRound)}。点击"重置本轮"重新开始。</p>`;
@@ -137,6 +160,48 @@ function renderPractice(course) {
       }
     });
   }
+}
+
+function renderExamStatus(practice) {
+  const exam = practice.exam || {};
+  const total = exam.questionIds?.length || practice.count || runtime.examCount || 0;
+  const answered = practice.answeredInRound || 0;
+  const timer = exam.finishedAt ? "已结束" : "--:--";
+  return `
+    <div class="exam-stat">
+      <strong id="examTimer">${timer}</strong>
+      <span>剩余时间 · ${answered}/${total} 题</span>
+    </div>
+  `;
+}
+
+function renderExamSummary(summary) {
+  const wrongCount = summary.wrongIds?.length || summary.wrong || 0;
+  return `
+    <section class="exam-summary">
+      <h3>${summary.timedOut ? "时间到，模拟结束" : "限时模拟完成"}</h3>
+      <div class="exam-summary-grid">
+        <div><strong>${summary.accuracy}%</strong><span>正确率</span></div>
+        <div><strong>${summary.correct}/${summary.total}</strong><span>答对题数</span></div>
+        <div><strong>${wrongCount}</strong><span>本轮错题</span></div>
+        <div><strong>${formatDuration(summary.elapsedSeconds)}</strong><span>用时</span></div>
+      </div>
+      ${wrongCount ? `
+        <button data-exam-action="review-wrong">复盘本轮错题</button>
+      ` : `<p class="empty">本轮没有错题，保持当前节奏即可。</p>`}
+    </section>
+  `;
+}
+
+function isExamMode(mode) {
+  return EXAM_MODES.has(mode);
+}
+
+function formatDuration(seconds = 0) {
+  const safe = Math.max(0, Number(seconds) || 0);
+  const minutes = Math.floor(safe / 60);
+  const rest = safe % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
 function renderChoicePractice(question) {
@@ -236,6 +301,7 @@ function renderAnswerFeedback(question) {
   ];
   if (settings.showAnswer) lines.push(`正确答案：${escapeHtml(correctText)}`);
   if (settings.showExplanation && question.explanation) lines.push(`解析：${escapeHtml(question.explanation)}`);
+  if (settings.showExplanation && question.memoryTip) lines.push(`速记：${escapeHtml(question.memoryTip)}`);
   if (!settings.showAnswer && !settings.showExplanation) lines.push("已记录本题结果，可在上方开关中选择是否显示答案和解析。");
 
   return `<div class="${feedback.correct ? "correct" : "wrong"}">${lines.join("<br>")}</div>`;
@@ -458,6 +524,7 @@ function renderBankList(questions) {
           <p>答案：${escapeHtml(renderAnswerText(question))}</p>
           ${question.review?.lastSelectedAnswers?.length ? `<p>上次选择：${escapeHtml(renderAnswerText(question, question.review.lastSelectedAnswers))}</p>` : ""}
           ${question.explanation ? `<p>解析：${escapeHtml(question.explanation)}</p>` : ""}
+          ${question.memoryTip ? `<p>速记：${escapeHtml(question.memoryTip)}</p>` : ""}
         </div>
         <div class="bank-actions">
           <button class="ghost" data-edit="${question.id}">编辑</button>
@@ -474,6 +541,7 @@ function renderQuestionForm(question) {
   const options = question?.options || [{ key: "A", text: "" }, { key: "B", text: "" }];
   const answer = question?.answer || [];
   const explanation = question?.explanation || "";
+  const memoryTip = question?.memoryTip || "";
   const formId = isEdit ? `edit-${question.id}` : "create";
   const isFillBlank = question?.type === "fill-blank";
 
@@ -515,6 +583,8 @@ function renderQuestionForm(question) {
         </div>
         <label>解析（可选）</label>
         <textarea class="form-explanation" placeholder="输入解析...">${escapeHtml(explanation)}</textarea>
+        <label>快速记忆方法（可选）</label>
+        <textarea class="form-memory-tip" placeholder="输入速记口诀或关键词联想...">${escapeHtml(memoryTip)}</textarea>
       </div>
       <div class="form-actions">
         <button data-save-form="${formId}">${isEdit ? "保存" : "创建"}</button>

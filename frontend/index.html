@@ -67,8 +67,15 @@
         <label class="practice-mode-option">
           <input type="radio" name="practiceMode" value="wrong"> 错题重做
         </label>
+        <label class="practice-mode-option">
+          <input type="radio" name="practiceMode" value="exam"> 限时模拟
+        </label>
         <input id="practiceCountInput" type="number" min="1" value="10" class="practice-count-input" style="display:none">
         <span id="practiceCountHint" class="practice-count-hint" style="display:none">题</span>
+        <span id="examTimeControls" class="exam-time-controls" style="display:none">
+          <input id="examMinutesInput" type="number" min="1" value="20" class="practice-count-input">
+          <span class="practice-count-hint">分钟</span>
+        </span>
       </div>
       <p id="roundInfo"></p>
       <div id="accuracy" class="accuracy"></div>
@@ -83,6 +90,7 @@
         <button id="submitBtn">提交答案</button>
         <button id="prevBtn" class="ghost" style="display:none">上一题</button>
         <button id="nextBtn">下一题</button>
+        <button id="finishExamBtn" class="ghost" style="display:none">结束模拟</button>
       </div>
     </section>
 

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { frontendDir } from "./config.js";
+import { applyStudyNotesToState } from "./services/StudyNoteGenerator.js";
 import {
   areChoiceAnswerSetsEqual,
   createId,
@@ -50,6 +51,15 @@ async function handleApi(req, res, url, repository, aiService) {
 
     if (req.method === "GET" && url.pathname === "/api/backups") {
       sendJson(res, 200, { backups: await repository.listBackups() });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/study-notes/generate") {
+      let result = null;
+      const state = await repository.update((draft) => {
+        result = applyStudyNotesToState(draft, { overwrite: Boolean(body.overwrite) });
+      });
+      sendJson(res, 200, { state, result });
       return;
     }
 
@@ -106,13 +116,13 @@ async function handleApi(req, res, url, repository, aiService) {
     }
 
     if (req.method === "POST" && url.pathname === "/api/questions/update") {
-      const { questionId, stem, options, answer, explanation } = body;
+      const { questionId, stem, options, answer, explanation, memoryTip } = body;
       if (!questionId) {
         sendJson(res, 400, { error: "缺少题目 ID" });
         return;
       }
       const state = await repository.update((draft) => {
-        const result = repository.updateQuestion(draft, questionId, { stem, options, answer, explanation });
+        const result = repository.updateQuestion(draft, questionId, { stem, options, answer, explanation, memoryTip });
         if (!result) throw new Error("题目不存在");
       });
       sendJson(res, 200, state);
@@ -138,37 +148,11 @@ async function handleApi(req, res, url, repository, aiService) {
     if (req.method === "POST" && url.pathname === "/api/practice/next") {
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
-        const mode = body.mode || course.practice.mode || "all";
-        const count = Number(body.count) || course.practice.count || 0;
+        const input = practiceInput(body, course.practice);
+        applyPracticeConfig(course, input);
 
-        // 记录当前模式到 practice 中
-        course.practice.mode = mode;
-        if (mode === "count" && count > 0) {
-          course.practice.count = count;
-        }
-
-        if (!course.practice.remainingIds.length) {
-          let allIds;
-          if (mode === "wrong") {
-            // 错题重做模式：只抽未连续答对 2 次的待清错题，并按冲刺优先级排序。
-            allIds = getWrongPracticeQuestions(course.questions).map((q) => q.id);
-          } else {
-            allIds = course.questions.map((question) => question.id);
-          }
-
-          if (mode === "count" && count > 0) {
-            // 指定数量模式：随机抽取 count 道题
-            const shuffled = shuffle(allIds);
-            course.practice.remainingIds = shuffled.slice(0, Math.min(count, shuffled.length));
-          } else if (mode === "wrong") {
-            course.practice.remainingIds = allIds;
-          } else {
-            // 全部模式：打乱所有题目
-            course.practice.remainingIds = shuffle(allIds);
-          }
-          course.practice.roundNo += course.practice.totalAnswered ? 1 : 0;
-          course.practice.answeredInRound = 0;
-          course.practice.correctInRound = 0;
+        if (!course.practice.remainingIds.length && shouldAutoStartRound(course.practice, input.mode)) {
+          startPracticeRound(course, input, { incrementRound: true });
         }
         course.practice.currentQuestionId = course.practice.remainingIds.shift() || null;
         course.practice.lastAnswer = null;
@@ -229,6 +213,7 @@ async function handleApi(req, res, url, repository, aiService) {
           correct,
           answeredAt
         };
+        recordExamAnswer(course.practice, course.practice.lastAnswer);
         answerResult = {
           accepted: true,
           ...course.practice.lastAnswer,
@@ -242,36 +227,19 @@ async function handleApi(req, res, url, repository, aiService) {
     if (req.method === "POST" && url.pathname === "/api/practice/reset-round") {
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
-        const mode = body.mode || course.practice.mode || "all";
-        const count = Number(body.count) || course.practice.count || 0;
-
-        course.practice.mode = mode;
-        if (mode === "count" && count > 0) {
-          course.practice.count = count;
-        }
-
-        let allIds;
-        if (mode === "wrong") {
-          // 错题重做模式：只抽未连续答对 2 次的待清错题，并按冲刺优先级排序。
-          allIds = getWrongPracticeQuestions(course.questions).map((q) => q.id);
-        } else {
-          allIds = course.questions.map((question) => question.id);
-        }
-
-        if (mode === "count" && count > 0) {
-          const shuffled = shuffle(allIds);
-          course.practice.remainingIds = shuffled.slice(0, Math.min(count, shuffled.length));
-        } else if (mode === "wrong") {
-          course.practice.remainingIds = allIds;
-        } else {
-          course.practice.remainingIds = shuffle(allIds);
-        }
-        course.practice.answeredInRound = 0;
-        course.practice.correctInRound = 0;
-        course.practice.currentQuestionId = null;
-        course.practice.lastAnswer = null;
+        startPracticeRound(course, practiceInput(body, course.practice));
       });
       sendJson(res, 200, state);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/practice/finish-exam") {
+      let summary = null;
+      const state = await repository.update((draft) => {
+        const course = repository.getActiveCourse(draft);
+        summary = finishExam(course, { timedOut: Boolean(body.timedOut) });
+      });
+      sendJson(res, 200, { state, summary });
       return;
     }
 
@@ -309,6 +277,186 @@ async function serveStatic(url, res) {
 function parseBody(raw) {
   if (!raw) return {};
   return JSON.parse(raw);
+}
+
+function practiceInput(body, practice = {}) {
+  const mode = body.mode || practice.mode || "all";
+  const rawCount = Number(body.count);
+  const count = rawCount > 0
+    ? rawCount
+    : isExamMode(mode)
+      ? Number(practice.count) || 30
+      : Number(practice.count) || 0;
+  const rawTimeLimit = Number(body.timeLimitMinutes);
+  const timeLimitMinutes = rawTimeLimit > 0
+    ? rawTimeLimit
+    : Number(practice.exam?.timeLimitMinutes) || 20;
+  return { mode, count, timeLimitMinutes };
+}
+
+function applyPracticeConfig(course, input) {
+  const practice = course.practice;
+  practice.mode = input.mode;
+  if ((input.mode === "count" || input.mode === "exam") && input.count > 0) {
+    practice.count = input.count;
+  }
+  if (isExamMode(input.mode)) {
+    const exam = ensureExamState(practice);
+    exam.timeLimitMinutes = input.timeLimitMinutes;
+  }
+}
+
+function startPracticeRound(course, input, { incrementRound = false } = {}) {
+  applyPracticeConfig(course, input);
+  const practice = course.practice;
+  const ids = buildPracticeIds(course, input);
+  practice.remainingIds = ids;
+  practice.answeredInRound = 0;
+  practice.correctInRound = 0;
+  practice.currentQuestionId = null;
+  practice.lastAnswer = null;
+  if (incrementRound) practice.roundNo += practice.totalAnswered ? 1 : 0;
+
+  if (isExamMode(input.mode)) {
+    const exam = ensureExamState(practice);
+    exam.timeLimitMinutes = input.timeLimitMinutes;
+    exam.startedAt = new Date().toISOString();
+    exam.finishedAt = "";
+    exam.questionIds = ids;
+    exam.answers = [];
+    exam.lastSummary = null;
+  }
+}
+
+function buildPracticeIds(course, input) {
+  const questions = course.questions || [];
+
+  if (input.mode === "wrong") {
+    return getWrongPracticeQuestions(questions).map((question) => question.id);
+  }
+  if (input.mode === "exam") {
+    return buildExamQuestionIds(questions, input.count);
+  }
+  if (input.mode === "exam-wrong") {
+    const availableIds = new Set(questions.map((question) => question.id));
+    return ensureExamState(course.practice).lastWrongIds.filter((id) => availableIds.has(id));
+  }
+
+  const allIds = questions.map((question) => question.id);
+  if (input.mode === "count" && input.count > 0) {
+    return shuffle(allIds).slice(0, Math.min(input.count, allIds.length));
+  }
+  return shuffle(allIds);
+}
+
+function buildExamQuestionIds(questions, count) {
+  const limit = Math.min(Number(count) || 30, questions.length);
+  const selected = [];
+  const seen = new Set();
+  const add = (items) => {
+    for (const question of items) {
+      if (!question?.id || seen.has(question.id) || selected.length >= limit) continue;
+      seen.add(question.id);
+      selected.push(question.id);
+    }
+  };
+
+  const pendingWrong = getWrongPracticeQuestions(questions);
+  const bookmarked = shuffle(questions.filter((question) => question.bookmarked));
+  const unanswered = shuffle(questions.filter((question) => !question.wrongCount && !question.correctCount));
+  const rest = shuffle(questions);
+
+  add(pendingWrong);
+  add(bookmarked);
+  add(unanswered);
+  add(rest);
+  return selected;
+}
+
+function shouldAutoStartRound(practice, mode) {
+  if (!isExamMode(mode)) return true;
+  const exam = ensureExamState(practice);
+  return !exam.startedAt || Boolean(exam.finishedAt) || !exam.questionIds.length;
+}
+
+function recordExamAnswer(practice, answer) {
+  if (!isExamMode(practice.mode)) return;
+  const exam = ensureExamState(practice);
+  exam.answers.push({
+    id: answer.id,
+    questionId: answer.questionId,
+    selectedAnswers: answer.selectedAnswers || [],
+    correct: Boolean(answer.correct),
+    answeredAt: answer.answeredAt
+  });
+}
+
+function finishExam(course, { timedOut = false } = {}) {
+  const practice = course.practice;
+  const exam = ensureExamState(practice);
+  const finishedAt = new Date().toISOString();
+  const questionsById = new Map((course.questions || []).map((question) => [question.id, question]));
+  const questionIds = (exam.questionIds || []).filter((id) => questionsById.has(id));
+  const latestAnswers = new Map();
+  for (const answer of exam.answers || []) {
+    if (questionIds.includes(answer.questionId)) latestAnswers.set(answer.questionId, answer);
+  }
+
+  const wrongIds = [];
+  let correct = 0;
+  for (const questionId of questionIds) {
+    const answer = latestAnswers.get(questionId);
+    if (answer?.correct) {
+      correct += 1;
+    } else {
+      wrongIds.push(questionId);
+    }
+  }
+
+  const total = questionIds.length;
+  const startedAt = exam.startedAt || finishedAt;
+  const elapsedSeconds = Math.max(0, Math.round((Date.parse(finishedAt) - Date.parse(startedAt)) / 1000));
+  const summary = {
+    id: createId("exam-summary"),
+    mode: practice.mode,
+    total,
+    answered: latestAnswers.size,
+    correct,
+    wrong: wrongIds.length,
+    accuracy: total ? Math.round((correct / total) * 100) : 0,
+    wrongIds,
+    timedOut,
+    startedAt,
+    finishedAt,
+    timeLimitMinutes: Number(exam.timeLimitMinutes) || 20,
+    elapsedSeconds
+  };
+
+  exam.finishedAt = finishedAt;
+  exam.lastWrongIds = wrongIds;
+  exam.lastSummary = summary;
+  practice.remainingIds = [];
+  practice.currentQuestionId = null;
+  practice.lastAnswer = null;
+  return summary;
+}
+
+function ensureExamState(practice) {
+  practice.exam = {
+    timeLimitMinutes: 20,
+    startedAt: "",
+    finishedAt: "",
+    questionIds: [],
+    answers: [],
+    lastWrongIds: [],
+    lastSummary: null,
+    ...(practice.exam || {})
+  };
+  return practice.exam;
+}
+
+function isExamMode(mode) {
+  return mode === "exam" || mode === "exam-wrong";
 }
 
 function buildImportResult(rawQuestions, existingQuestions = []) {
