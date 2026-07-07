@@ -59,19 +59,19 @@ export class JsonQuizRepository {
     }
   }
 
-  async saveState(state) {
+  async saveState(state, { skipBackup = false } = {}) {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
     const normalized = this.normalizeState(state);
     const nextContent = `${JSON.stringify(normalized, null, 2)}\n`;
-    await this.backupExistingFile(nextContent);
+    if (!skipBackup) await this.backupExistingFile(nextContent);
     await fs.writeFile(this.filePath, nextContent, "utf8");
   }
 
-  async update(mutator) {
+  async update(mutator, { skipBackup = false, readAfterWrite = true } = {}) {
     const state = await this.getState();
     await mutator(state);
-    await this.saveState(state);
-    return this.getState();
+    await this.saveState(state, { skipBackup });
+    return readAfterWrite ? this.getState() : state;
   }
 
   normalizeState(state) {

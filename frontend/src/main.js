@@ -8,6 +8,9 @@ import { applyLocalPracticeConfig, isPracticeRoundComplete, shouldAutoNextAfterS
 
 const $ = (selector) => document.querySelector(selector);
 const EXAM_MODES = new Set(["exam", "exam-wrong"]);
+let activeCourseSync = Promise.resolve();
+let activeCourseSyncError = null;
+let activeCourseSwitchToken = 0;
 
 const sample = `1. 下列哪项活动不是项目（）。
 A. 开发操作系统
@@ -189,6 +192,14 @@ function activePracticeCount() {
   return runtime.practiceMode === "exam" ? runtime.examCount : runtime.practiceCount;
 }
 
+async function ensureActiveCourseSynced() {
+  await activeCourseSync;
+  if (!activeCourseSyncError) return true;
+  const status = $("#status");
+  if (status) status.textContent = `课程切换同步失败：${activeCourseSyncError.message}`;
+  return false;
+}
+
 function syncPracticeInputs() {
   const countInput = $("#practiceCountInput");
   const countHint = $("#practiceCountHint");
@@ -223,6 +234,7 @@ async function importText() {
   const parsed = parseQuestions($("#sourceText").value);
   if (!parsed.length) return alert("未识别到完整题目。选择题请确认包含题干、至少 2 个选项和答案；填空题请确认包含题干和答案。");
 
+  if (!(await ensureActiveCourseSynced())) return;
   const result = await api.addQuestions(parsed);
   runtime.state = result.state;
   $("#status").textContent = `文本导入完成：成功 ${result.importResult.accepted.length} 道，失败 ${result.importResult.rejected.length} 道。`;
@@ -231,11 +243,38 @@ async function importText() {
 }
 
 async function setActiveCourse(event) {
-  runtime.state = await api.setActiveCourse(event.target.value);
+  const nextCourseId = event.target.value;
+  const previousCourseId = runtime.state.activeCourseId;
+  if (nextCourseId === previousCourseId) return;
+
+  const token = ++activeCourseSwitchToken;
+  activeCourseSyncError = null;
+  runtime.state.activeCourseId = nextCourseId;
   clearCurrentAnswer();
   runtime.questionHistory = [];
   renderApp();
   updatePrevBtn();
+  setupExamTimer();
+
+  activeCourseSync = activeCourseSync
+    .catch(() => {})
+    .then(() => api.setActiveCourse(nextCourseId, { light: true }))
+    .then((result) => {
+      if (token !== activeCourseSwitchToken) return;
+      if (result.activeCourseId !== nextCourseId) throw new Error("服务器未切换到目标课程");
+    })
+    .catch((error) => {
+      if (token !== activeCourseSwitchToken) return;
+      activeCourseSyncError = error;
+      if (runtime.state.activeCourseId === nextCourseId) {
+        runtime.state.activeCourseId = previousCourseId;
+        renderApp();
+        updatePrevBtn();
+        setupExamTimer();
+      }
+      const status = $("#status");
+      if (status) status.textContent = `课程切换同步失败：${error.message}`;
+    });
 }
 
 async function addCourse() {
@@ -247,12 +286,14 @@ async function addCourse() {
 
 async function deleteCourse() {
   if (!confirm("确认删除当前课程？该课程下的题目也会删除。")) return;
+  if (!(await ensureActiveCourseSynced())) return;
   runtime.state = await api.deleteCourse(activeCourse().id);
   clearCurrentAnswer();
   renderApp();
 }
 
 async function nextQuestion() {
+  if (!(await ensureActiveCourseSynced())) return;
   const course = activeCourse();
   const prevId = course.practice.currentQuestionId;
   const mode = course.practice.mode || runtime.practiceMode;
@@ -330,6 +371,7 @@ function updatePrevBtn() {
 }
 
 async function submitAnswer() {
+  if (!(await ensureActiveCourseSynced())) return;
   const question = currentQuestion();
   if (!question) return alert("请先点击下一题。");
 
@@ -454,6 +496,7 @@ function updateLocalQuestionReview(question, { correct, selectedAnswers, answere
 }
 
 async function resetRound() {
+  if (!(await ensureActiveCourseSynced())) return;
   stageLocalPracticeRound();
   runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
   clearCurrentAnswer();
@@ -468,6 +511,7 @@ async function finishExam(timedOut = false) {
   if (runtime.finishingExam) return;
   runtime.finishingExam = true;
   try {
+    if (!(await ensureActiveCourseSynced())) return;
     const result = await api.finishExam(timedOut);
     runtime.state = result.state;
     clearCurrentAnswer();
@@ -487,6 +531,7 @@ async function handleExamAction(event) {
   if (action === "review-wrong") {
     runtime.practiceMode = "exam-wrong";
     localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
+    if (!(await ensureActiveCourseSynced())) return;
     runtime.state = await api.resetRound("exam-wrong", runtime.practiceCount, runtime.examTimeLimitMinutes);
     clearCurrentAnswer();
     runtime.questionHistory = [];
@@ -566,6 +611,7 @@ async function handleReviewActions(event) {
     localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
     const modeRadio = document.querySelector("input[name='practiceMode'][value='wrong']");
     if (modeRadio) modeRadio.checked = true;
+    if (!(await ensureActiveCourseSynced())) return;
     runtime.state = await api.resetRound("wrong", runtime.practiceCount, runtime.examTimeLimitMinutes);
     clearCurrentAnswer();
     runtime.questionHistory = [];
@@ -588,6 +634,7 @@ async function handleReviewActions(event) {
 async function deleteQuestion(event) {
   const id = event.target.dataset.delete;
   if (!id || !confirm("确认删除这道题？")) return;
+  if (!(await ensureActiveCourseSynced())) return;
   runtime.state = await api.deleteQuestion(id);
   clearCurrentAnswer();
   renderApp();
@@ -621,6 +668,7 @@ async function handleBookmarkClick(event) {
   if (!btn) return;
 
   const questionId = btn.dataset.bookmark;
+  if (!(await ensureActiveCourseSynced())) return;
   runtime.state = await api.bookmarkQuestion(questionId);
   renderApp();
 }
@@ -794,6 +842,7 @@ async function saveQuestionForm(formId) {
     if (!data.answer.length) return alert("请勾选正确答案");
   }
 
+  if (!(await ensureActiveCourseSynced())) return;
   if (formId === "create") {
     const result = await api.addQuestions([{ ...data, answer: data.answer }]);
     runtime.state = result.state;
@@ -822,6 +871,7 @@ async function recognizeImage() {
       return;
     }
 
+    if (!(await ensureActiveCourseSynced())) return;
     const result = await api.addQuestions(questions);
     runtime.state = result.state;
     $("#status").textContent = `AI 导入完成：识别 ${result.importResult.total} 道，成功 ${result.importResult.accepted.length} 道，失败 ${result.importResult.rejected.length} 道。`;

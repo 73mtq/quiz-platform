@@ -14,7 +14,7 @@ async function request(path, options = {}) {
 export const api = {
   state: () => request("/api/state"),
   addCourse: (name) => request("/api/courses", { method: "POST", body: JSON.stringify({ name }) }),
-  setActiveCourse: (courseId) => request("/api/courses/active", { method: "POST", body: JSON.stringify({ courseId }) }),
+  setActiveCourse: (courseId, { light = false } = {}) => request(`/api/courses/active${light ? "?light=1" : ""}`, { method: "POST", body: JSON.stringify({ courseId }) }),
   deleteCourse: (courseId) => request("/api/courses/delete", { method: "POST", body: JSON.stringify({ courseId }) }),
   addQuestions: (questions) => request("/api/questions", { method: "POST", body: JSON.stringify({ questions }) }),
   deleteQuestion: (questionId) => request("/api/questions/delete", { method: "POST", body: JSON.stringify({ questionId }) }),

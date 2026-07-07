@@ -56,11 +56,11 @@ export class SqlQuizRepository {
   }
 
   /** 原子更新：读取 → 修改 → 保存 */
-  async update(mutator) {
+  async update(mutator, { readAfterWrite = true } = {}) {
     const state = await this.getState();
     await mutator(state);
     await this.saveState(state);
-    return this.getState();
+    return readAfterWrite ? this.getState() : this.normalizeState(state);
   }
 
   /** 规范化状态结构 */

@@ -74,12 +74,13 @@ async function handleApi(req, res, url, repository, aiService) {
     }
 
     if (req.method === "POST" && url.pathname === "/api/courses/active") {
+      const lightResponse = url.searchParams.get("light") === "1";
       const state = await repository.update((draft) => {
         if (draft.courses.some((course) => course.id === body.courseId)) {
           draft.activeCourseId = body.courseId;
         }
-      });
-      sendJson(res, 200, state);
+      }, { skipBackup: true, readAfterWrite: !lightResponse });
+      sendJson(res, 200, lightResponse ? { activeCourseId: state.activeCourseId } : state);
       return;
     }
 
@@ -117,6 +118,7 @@ async function handleApi(req, res, url, repository, aiService) {
 
     if (req.method === "POST" && url.pathname === "/api/questions/update") {
       const { questionId, stem, options, answer, explanation, memoryTip } = body;
+      const lightResponse = url.searchParams.get("light") === "1";
       if (!questionId) {
         sendJson(res, 400, { error: "缺少题目 ID" });
         return;
@@ -124,8 +126,8 @@ async function handleApi(req, res, url, repository, aiService) {
       const state = await repository.update((draft) => {
         const result = repository.updateQuestion(draft, questionId, { stem, options, answer, explanation, memoryTip });
         if (!result) throw new Error("题目不存在");
-      });
-      sendJson(res, 200, state);
+      }, { readAfterWrite: !lightResponse });
+      sendJson(res, 200, lightResponse ? { questionId } : state);
       return;
     }
 

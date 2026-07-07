@@ -321,7 +321,7 @@ function formatDuration(seconds = 0) {
 function renderChoicePractice(question) {
   const isMulti = question.answer.length > 1;
   const inputType = isMulti ? "checkbox" : "radio";
-  const multiHint = isMulti ? `<span class="multi-hint">（多选题，共${question.answer.length}个答案）</span>` : "";
+  const multiHint = isMulti ? `<span class="multi-hint">（多选题）</span>` : "";
   const wrongCount = question.wrongCount || 0;
   const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
   const bookmarked = question.bookmarked ? "active" : "";
