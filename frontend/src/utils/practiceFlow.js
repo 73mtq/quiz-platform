@@ -2,9 +2,14 @@ export function examQuestionTotal(practice = {}, fallbackTotal = 0) {
   const examIds = practice.exam?.questionIds;
   if (Array.isArray(examIds) && examIds.length) return examIds.length;
 
+  return roundQuestionTotal(practice, fallbackTotal);
+}
+
+export function roundQuestionTotal(practice = {}, fallbackTotal = 0) {
   const answered = Number(practice.answeredInRound) || 0;
   const remaining = Array.isArray(practice.remainingIds) ? practice.remainingIds.length : 0;
-  const current = practice.currentQuestionId ? 1 : 0;
+  const currentSubmitted = practice.lastAnswer?.questionId && practice.lastAnswer.questionId === practice.currentQuestionId;
+  const current = practice.currentQuestionId && !currentSubmitted ? 1 : 0;
   const derived = answered + remaining + current;
   if (derived > 0) return derived;
 
@@ -12,7 +17,16 @@ export function examQuestionTotal(practice = {}, fallbackTotal = 0) {
 }
 
 export function examRemainingCount(practice = {}, fallbackTotal = 0) {
-  const total = examQuestionTotal(practice, fallbackTotal);
+  return roundRemainingCount(practice, fallbackTotal);
+}
+
+export function roundAnsweredCount(practice = {}, fallbackTotal = 0) {
+  const total = roundQuestionTotal(practice, fallbackTotal);
+  return Math.min(total, Number(practice.answeredInRound) || 0);
+}
+
+export function roundRemainingCount(practice = {}, fallbackTotal = 0) {
+  const total = roundQuestionTotal(practice, fallbackTotal);
   const answered = Math.min(total, Number(practice.answeredInRound) || 0);
   return Math.max(0, total - answered);
 }
@@ -23,6 +37,16 @@ export function hasNextQuestionInRound(practice = {}) {
 
 export function shouldAutoNextAfterSubmit({ correct, autoNext, practice }) {
   return Boolean(correct && autoNext && hasNextQuestionInRound(practice));
+}
+
+export function isPracticeRoundComplete(practice = {}, fallbackTotal = 0) {
+  const total = roundQuestionTotal(practice, fallbackTotal);
+  if (total <= 0) return false;
+  return roundAnsweredCount(practice, fallbackTotal) >= total && !hasNextQuestionInRound(practice);
+}
+
+export function isPracticeRoundStarted(practice = {}) {
+  return Boolean(practice.currentQuestionId) || (Number(practice.answeredInRound) || 0) > 0;
 }
 
 export function stripMemoryTipLabel(value = "") {

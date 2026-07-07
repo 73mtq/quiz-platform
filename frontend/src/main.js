@@ -4,7 +4,7 @@ import { renderApp, renderImportResult, updatePracticeOnly } from "./ui/render.j
 import { getChoiceAnswerTexts, isChoiceAnswerCorrect, normalizeChoiceText } from "./utils/answers.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
-import { shouldAutoNextAfterSubmit } from "./utils/practiceFlow.js";
+import { isPracticeRoundComplete, shouldAutoNextAfterSubmit } from "./utils/practiceFlow.js";
 
 const $ = (selector) => document.querySelector(selector);
 const EXAM_MODES = new Set(["exam", "exam-wrong"]);
@@ -112,6 +112,7 @@ function bind() {
       const target = event.target;
       if (target.closest("[data-bookmark]")) handleBookmarkClick(event);
       if (target.closest("[data-exam-action]")) handleExamAction(event);
+      if (target.closest("[data-round-action]")) handleRoundAction(event);
     });
   }
 
@@ -253,6 +254,11 @@ async function nextQuestion() {
   const course = activeCourse();
   const prevId = course.practice.currentQuestionId;
   const mode = course.practice.mode || runtime.practiceMode;
+
+  if (isExamMode(mode) && isPracticeRoundComplete(course.practice, mode === "exam" ? runtime.examCount : runtime.practiceCount)) {
+    await finishExam(false);
+    return;
+  }
 
   if (isExamMode(mode)) {
     if (prevId) runtime.questionHistory.push(prevId);
@@ -489,6 +495,15 @@ async function handleExamAction(event) {
 
   if (action === "finish") {
     await finishExam(false);
+  }
+}
+
+async function handleRoundAction(event) {
+  const action = event.target.closest("[data-round-action]")?.dataset.roundAction;
+  if (!action) return;
+
+  if (action === "next-round") {
+    await nextQuestion();
   }
 }
 

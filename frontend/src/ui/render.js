@@ -1,7 +1,16 @@
 import { activeCourse, currentQuestion, runtime, settings } from "../state/appState.js";
 import { getChoiceAnswerTexts, hasChoiceAnswer, normalizeChoiceText } from "../utils/answers.js";
 import { escapeHtml, rate } from "../utils/format.js";
-import { examQuestionTotal, examRemainingCount, stripMemoryTipLabel } from "../utils/practiceFlow.js";
+import {
+  examQuestionTotal,
+  examRemainingCount,
+  isPracticeRoundComplete,
+  isPracticeRoundStarted,
+  roundAnsweredCount,
+  roundQuestionTotal,
+  roundRemainingCount,
+  stripMemoryTipLabel
+} from "../utils/practiceFlow.js";
 import { analyzeReview, getQuestionTags, isMasteredWrongQuestion, isPendingWrongQuestion, sortWrongQuestions } from "../utils/review.js";
 
 /** 随机打乱数组（Fisher-Yates 洗牌算法） */
@@ -92,9 +101,12 @@ function renderPractice(course) {
   const mode = practice.mode || "all";
   const count = practice.count || 0;
   const examTotal = examQuestionTotal(practice, runtime.examCount);
+  const roundTotal = isExamMode(mode) ? examTotal : roundQuestionTotal(practice, count || runtime.practiceCount);
+  const answeredCount = roundAnsweredCount(practice, roundTotal);
   const remainingCount = isExamMode(mode)
     ? examRemainingCount(practice, runtime.examCount)
-    : practice.remainingIds.length;
+    : roundRemainingCount(practice, roundTotal);
+  const roundComplete = isPracticeRoundComplete(practice, roundTotal);
 
   // 同步模式选择 UI
   const countInput = $("#practiceCountInput");
@@ -122,13 +134,16 @@ function renderPractice(course) {
     <div><strong>${rate(practice.correctInRound, practice.answeredInRound)}</strong><span>正确率 ${practice.correctInRound}/${practice.answeredInRound}</span></div>
     ${isExamMode(mode) ? renderExamStatus(practice) : ""}
   `;
+  renderRoundBoundary({ practice, mode, question, total: roundTotal, answered: answeredCount, remaining: remainingCount, complete: roundComplete });
+  updatePracticeActions({ practice, mode, question, complete: roundComplete });
+
   if (!question) {
     if (isExamMode(mode) && practice.exam?.lastSummary) {
       $("#quizCard").innerHTML = renderExamSummary(practice.exam.lastSummary);
       animateQuizCard();
       return;
     }
-    if (isExamMode(mode) && practice.exam?.startedAt && !practice.exam?.finishedAt && practice.exam?.questionIds?.length) {
+    if (isExamMode(mode) && roundComplete) {
       $("#quizCard").innerHTML = `
         <section class="exam-empty-state">
           <p class="empty round-done">本轮题目已用完，结束模拟查看总结。</p>
@@ -138,15 +153,20 @@ function renderPractice(course) {
       animateQuizCard();
       return;
     }
+    if (!isPracticeRoundStarted(practice) && practice.remainingIds.length) {
+      $("#quizCard").innerHTML = renderRoundStartState(mode);
+      animateQuizCard();
+      return;
+    }
     // 指定数量模式下刷完本轮显示完成提示
-    if (mode === "count" && practice.answeredInRound > 0) {
-      $("#quizCard").innerHTML = `<p class="empty round-done">${practice.answeredInRound} 题已完成！正确率 ${rate(practice.correctInRound, practice.answeredInRound)}。点击"重置本轮"重新开始。</p>`;
+    if (roundComplete && mode === "count") {
+      $("#quizCard").innerHTML = renderRoundCompleteState(practice, "本轮指定题数已完成。");
     } else if (mode === "wrong" && practice.answeredInRound > 0) {
-      $("#quizCard").innerHTML = `<p class="empty round-done">本轮待清错题已完成。连续答对 2 次的题会标记为已掌握。</p>`;
+      $("#quizCard").innerHTML = renderRoundCompleteState(practice, "本轮待清错题已完成。连续答对 2 次的题会标记为已掌握。");
     } else if (mode === "wrong") {
       $("#quizCard").innerHTML = `<p class="empty">暂无待清错题。答错的题会进入这里，连续答对 2 次后自动清出。</p>`;
     } else {
-      $("#quizCard").innerHTML = `<p class="empty">点击"下一题"开始。</p>`;
+      $("#quizCard").innerHTML = renderRoundStartState(mode);
     }
     animateQuizCard();
     return;
@@ -182,6 +202,81 @@ function renderExamStatus(practice) {
       <strong id="examTimer">${timer}</strong>
       <span>剩余时间 · ${answered}/${total} 题</span>
     </div>
+  `;
+}
+
+function renderRoundBoundary({ practice, mode, question, total, answered, remaining, complete }) {
+  const target = $("#roundBoundary");
+  if (!target) return;
+
+  const started = isPracticeRoundStarted(practice);
+  let label = "未开始";
+  let detail = "点击“开始刷题”进入本轮第一题。";
+  let tone = "is-start";
+
+  if (complete) {
+    label = isExamMode(mode) ? "本轮题目已答完" : "本轮已完成";
+    detail = isExamMode(mode)
+      ? "点击“结束模拟”查看本轮总结和错题复盘。"
+      : "点击“开始下一轮”继续刷题，或重置本轮重新抽题。";
+    tone = "is-complete";
+  } else if (started || question) {
+    label = "进行中";
+    detail = total > 0
+      ? `进度 ${answered}/${total}，剩余 ${remaining} 题。`
+      : "正在刷题。";
+    tone = "is-active";
+  }
+
+  target.className = `round-boundary ${tone}`;
+  target.innerHTML = `
+    <strong>${escapeHtml(label)}</strong>
+    <span>${escapeHtml(detail)}</span>
+  `;
+}
+
+function updatePracticeActions({ practice, mode, question, complete }) {
+  const submitBtn = $("#submitBtn");
+  const nextBtn = $("#nextBtn");
+  const finishedExam = isExamMode(mode) && practice.exam?.finishedAt;
+  const submitted = question && runtime.answerFeedback?.questionId === question.id;
+
+  if (submitBtn) {
+    submitBtn.disabled = !question || Boolean(submitted) || Boolean(finishedExam);
+    submitBtn.textContent = submitted ? "已提交" : "提交答案";
+  }
+
+  if (nextBtn) {
+    nextBtn.style.display = finishedExam ? "none" : "";
+    if (!question && !isPracticeRoundStarted(practice)) {
+      nextBtn.textContent = mode === "exam" ? "开始模拟" : "开始刷题";
+    } else if (complete) {
+      nextBtn.textContent = isExamMode(mode) ? "结束模拟" : "开始下一轮";
+    } else {
+      nextBtn.textContent = "下一题";
+    }
+  }
+}
+
+function renderRoundStartState(mode) {
+  const title = mode === "exam" ? "限时模拟未开始" : "本轮未开始";
+  const action = mode === "exam" ? "开始模拟" : "开始刷题";
+  return `
+    <section class="round-state is-start">
+      <strong>${title}</strong>
+      <p>点击下方“${action}”抽取第一题。本轮开始后会显示进度和剩余题数。</p>
+    </section>
+  `;
+}
+
+function renderRoundCompleteState(practice, message) {
+  return `
+    <section class="round-state is-complete">
+      <strong>本轮已完成</strong>
+      <p>${escapeHtml(message)}</p>
+      <p>正确率 ${rate(practice.correctInRound, practice.answeredInRound)}，已答 ${practice.correctInRound}/${practice.answeredInRound}。</p>
+      <button data-round-action="next-round">开始下一轮</button>
+    </section>
   `;
 }
 
@@ -319,7 +414,35 @@ function renderAnswerFeedback(question) {
   if (settings.showExplanation && memoryTip) lines.push(`速记：${escapeHtml(memoryTip)}`);
   if (!settings.showAnswer && !settings.showExplanation) lines.push("已记录本题结果，可在上方开关中选择是否显示答案和解析。");
 
-  return `<div class="${feedback.correct ? "correct" : "wrong"}">${lines.join("<br>")}</div>`;
+  return `
+    <div class="${feedback.correct ? "correct" : "wrong"}">${lines.join("<br>")}</div>
+    ${renderSubmittedRoundEndAction(question)}
+  `;
+}
+
+function renderSubmittedRoundEndAction(question) {
+  const course = activeCourse();
+  const practice = course.practice;
+  if (runtime.answerFeedback?.questionId !== question.id) return "";
+  if (!isPracticeRoundComplete(practice, roundQuestionTotal(practice))) return "";
+
+  if (isExamMode(practice.mode)) {
+    return `
+      <section class="round-finish-panel">
+        <strong>本轮题目已答完</strong>
+        <span>结束模拟后会生成正确率和本轮错题。</span>
+        <button data-exam-action="finish">结束模拟</button>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="round-finish-panel">
+      <strong>本轮已完成</strong>
+      <span>可以开始下一轮，或用“重置本轮”重新抽题。</span>
+      <button data-round-action="next-round">开始下一轮</button>
+    </section>
+  `;
 }
 
 function renderReview(course) {

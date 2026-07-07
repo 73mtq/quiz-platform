@@ -6,6 +6,9 @@ import { buildStudyNotes, stripMemoryTipLabel } from "./services/StudyNoteGenera
 import { normalizeQuestion } from "./utils.js";
 import {
   examQuestionTotal,
+  isPracticeRoundComplete,
+  roundQuestionTotal,
+  roundRemainingCount,
   shouldAutoNextAfterSubmit,
   stripMemoryTipLabel as stripRenderedMemoryTipLabel
 } from "../../frontend/src/utils/practiceFlow.js";
@@ -366,6 +369,33 @@ test("auto next is disabled on the final question", () => {
     autoNext: true,
     practice: { remainingIds: ["next-id"] }
   }), true);
+});
+
+test("practice round helpers distinguish reset start from submitted finish", () => {
+  const resetStart = {
+    mode: "exam",
+    count: 2,
+    remainingIds: ["q-1", "q-2"],
+    answeredInRound: 0,
+    currentQuestionId: null,
+    lastAnswer: null,
+    exam: { questionIds: ["q-1", "q-2"] }
+  };
+  assert.equal(roundQuestionTotal(resetStart, 2), 2);
+  assert.equal(roundRemainingCount(resetStart, 2), 2);
+  assert.equal(isPracticeRoundComplete(resetStart, 2), false);
+
+  const submittedFinish = {
+    mode: "count",
+    count: 2,
+    remainingIds: [],
+    answeredInRound: 2,
+    currentQuestionId: "q-2",
+    lastAnswer: { questionId: "q-2", correct: true }
+  };
+  assert.equal(roundQuestionTotal(submittedFinish, 2), 2);
+  assert.equal(roundRemainingCount(submittedFinish, 2), 0);
+  assert.equal(isPracticeRoundComplete(submittedFinish, 2), true);
 });
 
 test("finish-exam returns summary and exam-wrong uses last wrong ids", async () => {
