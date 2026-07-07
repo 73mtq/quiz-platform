@@ -1164,6 +1164,16 @@ textarea::placeholder {
   gap: 8px;
 }
 
+.bank-list-limit {
+  margin: 0 0 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 12px;
+}
+
 .bank-item {
   display: flex;
   justify-content: space-between;

@@ -25,6 +25,7 @@ function shuffleArray(arr) {
 
 const $ = (selector) => document.querySelector(selector);
 const EXAM_MODES = new Set(["exam", "exam-wrong"]);
+const BANK_RENDER_LIMIT = 120;
 
 /** 给答题卡片添加切换动画（仅桌面端，移动端跳过以提升性能） */
 function animateQuizCard() {
@@ -50,6 +51,10 @@ export function renderApp() {
 /** 只更新题目区域（答题/切题时用，跳过侧边栏和题库重建） */
 export function updatePracticeOnly() {
   renderPractice(activeCourse());
+}
+
+export function updateBankListOnly() {
+  renderBankResults(activeCourse());
 }
 
 export function renderImportResult(importResult, source = "导入") {
@@ -603,6 +608,11 @@ function renderBank(course) {
   const bankPanel = $("#bankPanel");
   if (!bankPanel || !bankPanel.classList.contains("active")) return;
 
+  renderBankToolbar(course);
+  renderBankResults(course);
+}
+
+function renderBankToolbar(course) {
   const wrongCount = course.questions.filter((q) => (q.wrongCount || 0) > 0).length;
   const pendingWrongCount = course.questions.filter(isPendingWrongQuestion).length;
   const bookmarkedCount = course.questions.filter((q) => q.bookmarked).length;
@@ -612,11 +622,13 @@ function renderBank(course) {
       <span class="bank-count">共 ${course.questions.length} 题</span>
       <button id="toggleWrongOnlyBtn" class="ghost ${runtime.bankShowWrongOnly ? "active-filter" : ""}">只看错题（待清 ${pendingWrongCount} / 历史 ${wrongCount}）</button>
       <button id="toggleBookmarkedOnlyBtn" class="ghost ${runtime.bankShowBookmarkedOnly ? "active-filter" : ""}">只看收藏（${bookmarkedCount}）</button>
-      <input type="text" id="bankSearch" placeholder="搜索题干关键词..." value="${runtime.bankSearch || ""}">
+      <input type="text" id="bankSearch" placeholder="搜索题干关键词..." value="${escapeHtml(runtime.bankSearch || "")}">
       <button id="createQuestionBtn" class="ghost">手动出题</button>
     `;
   }
+}
 
+function renderBankResults(course) {
   const keyword = (runtime.bankSearch || "").trim().toLowerCase();
   let filtered = keyword
     ? course.questions.filter((q) => q.stem.toLowerCase().includes(keyword))
@@ -643,7 +655,13 @@ function renderBank(course) {
 function renderBankList(questions) {
   if (!questions.length) return `<p class="empty">${runtime.bankSearch ? "没有匹配的题目。" : "题库为空。"}</p>`;
 
-  return questions.map((question, index) => {
+  const visibleQuestions = questions.slice(0, BANK_RENDER_LIMIT);
+  const hiddenCount = Math.max(0, questions.length - visibleQuestions.length);
+  const limitNotice = hiddenCount
+    ? `<p class="bank-list-limit">已显示前 ${visibleQuestions.length} 题，还有 ${hiddenCount} 题。请继续输入关键词缩小范围。</p>`
+    : "";
+
+  return `${limitNotice}${visibleQuestions.map((question, index) => {
     if (runtime.editingQuestionId === question.id) {
       return renderQuestionForm(question);
     }
@@ -679,7 +697,7 @@ function renderBankList(questions) {
         </div>
       </article>
     `;
-  }).join("");
+  }).join("")}`;
 }
 
 function renderQuestionForm(question) {

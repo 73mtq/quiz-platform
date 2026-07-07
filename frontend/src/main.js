@@ -1,6 +1,6 @@
 import { api } from "./api/client.js";
 import { activeCourse, clearCurrentAnswer, currentQuestion, persistFeedbackSettings, runtime, settings } from "./state/appState.js";
-import { renderApp, renderImportResult, updatePracticeOnly } from "./ui/render.js";
+import { renderApp, renderImportResult, updateBankListOnly, updatePracticeOnly } from "./ui/render.js";
 import { getChoiceAnswerTexts, isChoiceAnswerCorrect, normalizeChoiceText } from "./utils/answers.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
@@ -11,6 +11,7 @@ const EXAM_MODES = new Set(["exam", "exam-wrong"]);
 let activeCourseSync = Promise.resolve();
 let activeCourseSyncError = null;
 let activeCourseSwitchToken = 0;
+let bankSearchRenderTimer = null;
 
 const sample = `1. 下列哪项活动不是项目（）。
 A. 开发操作系统
@@ -643,7 +644,10 @@ async function deleteQuestion(event) {
 function handleBankSearch(event) {
   if (event.target.id === "bankSearch") {
     runtime.bankSearch = event.target.value;
-    renderApp();
+    clearTimeout(bankSearchRenderTimer);
+    bankSearchRenderTimer = setTimeout(() => {
+      updateBankListOnly();
+    }, 120);
   }
 }
 
