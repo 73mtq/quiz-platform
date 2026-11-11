@@ -8,7 +8,6 @@ export const settings = {
 export const runtime = {
   state: null,
   selectedAnswers: [],
-  submittedQuestionId: "",
   answerFeedback: null,
   bankSearch: "",
   editingQuestionId: null,
@@ -35,7 +34,6 @@ export function currentQuestion() {
 
 export function clearCurrentAnswer() {
   runtime.selectedAnswers = [];
-  runtime.submittedQuestionId = "";
   runtime.answerFeedback = null;
 }
 

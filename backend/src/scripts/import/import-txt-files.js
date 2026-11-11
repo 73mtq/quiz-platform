@@ -2,7 +2,7 @@
  * 批量导入 txt 题库文件
  *
  * 用法：
- *   node backend/src/scripts/import-txt-files.js "D:\桌面\习思想\习思题库"
+ *   node backend/src/scripts/import/import-txt-files.js "D:\桌面\习思想\习思题库"
  *
  * 可选环境变量：
  *   API_URL  后端地址（默认 http://127.0.0.1:8787）
@@ -169,7 +169,7 @@ async function main() {
   const dirPath = process.argv[2];
   if (!dirPath) {
     console.error("❌ 请指定题库目录路径");
-    console.error('   node backend/src/scripts/import-txt-files.js "D:\\桌面\\习思想\\习思题库"');
+    console.error('   node backend/src/scripts/import/import-txt-files.js "D:\\桌面\\习思想\\习思题库"');
     process.exit(1);
   }
 

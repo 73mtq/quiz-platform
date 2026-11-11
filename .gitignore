@@ -4,9 +4,11 @@ data/backups/
 node_modules/
 *.log
 .DS_Store
-data/*.json.bak-*
+data/*.bak*
 .omc/
 .omo/
 dist/
 output/
 .test-tmp/
+# hindsight MCP registration (machine-specific)
+.trae/mcp.json

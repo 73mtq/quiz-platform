@@ -1,27 +1,65 @@
+import zlib from "node:zlib";
+import { promisify } from "node:util";
+
+const gzip = promisify(zlib.gzip);
+const COMPRESS_MIN_BYTES = 1024;
+
 export function createId(prefix = "id") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function sendJson(res, status, payload) {
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-  res.end(JSON.stringify(payload));
+export function httpError(status, message) {
+  const error = new Error(message);
+  error.statusCode = status;
+  return error;
+}
+
+export async function sendJson(req, res, status, payload) {
+  await sendBody(req, res, status, "application/json; charset=utf-8", Buffer.from(JSON.stringify(payload), "utf8"), {
+    "cache-control": "no-store"
+  });
+}
+
+export async function sendBody(req, res, status, contentType, body, extraHeaders = {}) {
+  if (res.writableEnded) return;
+  const headers = { "content-type": contentType, ...extraHeaders };
+  if (body.length >= COMPRESS_MIN_BYTES && acceptsGzip(req)) {
+    headers["content-encoding"] = "gzip";
+    headers["vary"] = "accept-encoding";
+    res.writeHead(status, headers);
+    res.end(await gzip(body));
+    return;
+  }
+  res.writeHead(status, headers);
+  res.end(body);
+}
+
+export function acceptsGzip(req) {
+  return /\bgzip\b/.test(String(req.headers["accept-encoding"] || ""));
 }
 
 export function readBody(req, maxBytes = 20 * 1024 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
+    let exceeded = false;
     const chunks = [];
     req.on("data", (chunk) => {
+      if (exceeded) return;
       size += chunk.length;
       if (size > maxBytes) {
-        reject(new Error("请求体过大"));
-        req.destroy();
+        exceeded = true;
+        chunks.length = 0;
+        reject(httpError(413, "请求体超过大小上限"));
         return;
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
+    req.on("end", () => {
+      if (!exceeded) resolve(Buffer.concat(chunks).toString("utf8"));
+    });
+    req.on("error", (error) => {
+      if (!exceeded) reject(error);
+    });
   });
 }
 
@@ -41,7 +79,7 @@ export function getChoiceAnswerTexts(question, answers = question.answer || []) 
     const raw = String(answer || "").trim();
     if (!raw) continue;
 
-    const byKey = options.find((option) => option.key.toUpperCase() === raw.toUpperCase());
+    const byKey = options.find((option) => String(option.key || "").trim().toUpperCase() === raw.toUpperCase());
     const byText = byKey || options.find((option) => normalizeChoiceText(option.text) === normalizeChoiceText(raw));
     const text = byText ? byText.text : raw;
     const key = normalizeChoiceText(text);
@@ -115,6 +153,20 @@ export function areChoiceAnswerSetsEqual(question, selectedAnswers, correctAnswe
   const selected = getChoiceAnswerTexts(question, selectedAnswers).map(normalizeChoiceText).sort();
   const correct = getChoiceAnswerTexts(question, correctAnswers).map(normalizeChoiceText).sort();
   return selected.length === correct.length && selected.every((item, index) => item === correct[index]);
+}
+
+export function areFillBlankAnswersCorrect(question, selectedAnswers = []) {
+  const answers = (selectedAnswers || []).map((item) => String(item ?? "").trim());
+  const blanks = question.answer || [];
+  const blanksCorrect = answers.map((userAnswerText, index) => {
+    if (!userAnswerText) return false;
+    const acceptable = String(blanks[index] || "")
+      .split(/[；;|、]/)
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    return acceptable.includes(userAnswerText.toLowerCase());
+  });
+  return blanksCorrect.length === blanks.length && blanksCorrect.every(Boolean);
 }
 
 export function normalizeQuestion(question) {

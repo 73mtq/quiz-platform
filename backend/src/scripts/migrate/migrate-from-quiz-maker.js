@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { dataFile } from "../config.js";
-import { JsonQuizRepository } from "../repositories/JsonQuizRepository.js";
-import { normalizeQuestion, validateQuestion } from "../utils.js";
+import { dataFile } from "../../config.js";
+import { JsonQuizRepository } from "../../repositories/JsonQuizRepository.js";
+import { normalizeQuestion, validateQuestion } from "../../utils.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const defaultSource = path.resolve(currentDir, "../../../../quiz-maker/data/quiz-data.json");
+const defaultSource = path.resolve(currentDir, "../../../../../quiz-maker/data/quiz-data.json");
 const sourceFile = process.argv[2] ? path.resolve(process.argv[2]) : defaultSource;
 
 const source = JSON.parse(await fs.readFile(sourceFile, "utf8"));

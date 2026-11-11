@@ -78,9 +78,9 @@ export function applyLocalPracticeConfig(practice = {}, { mode = "all", count = 
 }
 
 export function stripMemoryTipLabel(value = "") {
-  return String(value || "")
-    .trim()
-    .replace(/^(?:速记|快速记忆|记忆法|口诀)\s*[：:]\s*/u, "")
-    .replace(/^(?:速记|快速记忆|记忆法|口诀)\s*[：:]\s*/u, "")
-    .trim();
+  let text = String(value || "").trim();
+  while (/^(?:速记|快速记忆|记忆法|口诀)\s*[：:]\s*/u.test(text)) {
+    text = text.replace(/^(?:速记|快速记忆|记忆法|口诀)\s*[：:]\s*/u, "").trim();
+  }
+  return text;
 }

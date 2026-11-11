@@ -122,6 +122,16 @@ class MemoryRepository {
     return state.courses.find((course) => course.id === state.activeCourseId) || state.courses[0];
   }
 
+  createCourse(name) {
+    return {
+      id: `course-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name,
+      questions: [],
+      practice: emptyPractice(),
+      createdAt: new Date().toISOString()
+    };
+  }
+
   updateQuestion(state, questionId, data) {
     const course = state.courses.find((item) => item.questions.some((question) => question.id === questionId));
     if (!course) return null;
@@ -169,8 +179,9 @@ async function withServer(state, callback) {
 
   try {
     const { port } = server.address();
+    const baseUrl = `http://127.0.0.1:${port}`;
     const request = async (path, body) => {
-      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      const response = await fetch(`${baseUrl}${path}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body)
@@ -179,7 +190,7 @@ async function withServer(state, callback) {
       assert.equal(response.status, 200, JSON.stringify(payload));
       return payload;
     };
-    return await callback(request, repository);
+    return await callback(request, repository, baseUrl);
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
@@ -461,3 +472,116 @@ test("finish-exam returns summary and exam-wrong uses last wrong ids", async () 
     assert.deepEqual([...review.courses[0].practice.remainingIds].sort(), [...summary.wrongIds].sort());
   });
 });
+
+test("bookmark toggles on and off", async () => {
+  await withServer(createState(), async (request) => {
+    const added = await request("/api/questions/bookmark", { questionId: "unanswered" });
+    assert.equal(findQuestion(added, "unanswered").bookmarked, true);
+
+    const removed = await request("/api/questions/bookmark", { questionId: "unanswered" });
+    assert.equal(findQuestion(removed, "unanswered").bookmarked, false);
+  });
+});
+
+test("delete question clears round references", async () => {
+  const state = createState();
+  const practice = state.courses[0].practice;
+  practice.remainingIds = ["unanswered", "wrong-only"];
+  practice.currentQuestionId = "unanswered";
+
+  await withServer(state, async (request) => {
+    const result = await request("/api/questions/delete", { questionId: "unanswered" });
+    const course = result.courses[0];
+
+    assert.equal(course.questions.some((question) => question.id === "unanswered"), false);
+    assert.deepEqual(course.practice.remainingIds, ["wrong-only"]);
+    assert.equal(course.practice.currentQuestionId, null);
+  });
+});
+
+test("courses can be added and deleted, last course is kept", async () => {
+  await withServer(createState(), async (request) => {
+    const added = await request("/api/courses", { name: "第二门课" });
+    assert.equal(added.courses.length, 2);
+    assert.equal(added.activeCourseId, added.courses[1].id);
+
+    const deleted = await request("/api/courses/delete", { courseId: added.courses[1].id });
+    assert.equal(deleted.courses.length, 1);
+
+    const refused = await request("/api/courses/delete", { courseId: deleted.courses[0].id });
+    assert.equal(refused.courses.length, 1);
+  });
+});
+
+test("study notes generation fills explanation and memory tip", async () => {
+  await withServer(createState(), async (request) => {
+    const result = await request("/api/study-notes/generate", {});
+    const question = result.state.courses[0].questions.find((item) => item.id === "wrong-only");
+
+    assert.equal(result.result.scanned, 6);
+    assert.ok(result.result.explanationAdded > 0);
+    assert.ok(question.explanation);
+    assert.ok(question.memoryTip);
+  });
+});
+
+test("invalid json body returns 400", async () => {
+  await withServer(createState(), async (request, repository, baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/courses`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{ 这不是合法 JSON"
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(payload.error, /JSON/);
+  });
+});
+
+test("malformed url path returns 400 instead of rejecting", async () => {
+  await withServer(createState(), async (request, repository, baseUrl) => {
+    const response = await fetch(`${baseUrl}/%ZZ`);
+    const payload = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(payload.error, /请求路径/);
+  });
+});
+
+test("state response is gzip compressed and static files support etag", async () => {
+  await withServer(createLargeExamState(40), async (request, repository, baseUrl) => {
+    const state = await fetch(`${baseUrl}/api/state`);
+    assert.equal(state.status, 200);
+    assert.equal(state.headers.get("content-encoding"), "gzip");
+    assert.equal(state.headers.get("cache-control"), "no-store");
+    assert.ok((await state.json()).courses.length);
+
+    const asset = await fetch(`${baseUrl}/src/main.js`);
+    assert.equal(asset.status, 200);
+    const etag = asset.headers.get("etag");
+    assert.ok(etag);
+    assert.match(asset.headers.get("content-type"), /javascript/);
+
+    const cached = await fetch(`${baseUrl}/src/main.js`, { headers: { "if-none-match": etag } });
+    assert.equal(cached.status, 304);
+  });
+});
+
+test("oversized request body returns 413", async () => {
+  await withServer(createState(), async (request, repository, baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/questions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ questions: [] }).padEnd(21 * 1024 * 1024, " ")
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 413);
+    assert.match(payload.error, /超过大小上限/);
+  });
+});
+
+function findQuestion(state, questionId) {
+  return state.courses[0].questions.find((question) => question.id === questionId);
+}

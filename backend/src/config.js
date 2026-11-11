@@ -17,7 +17,8 @@ export const config = {
   },
   mimoApiKey: process.env.MIMO_API_KEY || "",
   mimoBaseUrl: (process.env.MIMO_BASE_URL || "https://token-plan-cn.xiaomimimo.com/v1").replace(/\/+$/, ""),
-  mimoModel: process.env.MIMO_MODEL || "mimo-v2.5"
+  mimoModel: process.env.MIMO_MODEL || "mimo-v2.5",
+  mimoTimeoutMs: Number(process.env.MIMO_TIMEOUT_MS) || 120000
 };
 
 function loadDotEnv(filePath) {

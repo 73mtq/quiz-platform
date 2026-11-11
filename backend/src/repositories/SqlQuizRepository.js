@@ -55,12 +55,32 @@ export class SqlQuizRepository {
     );
   }
 
-  /** 原子更新：读取 → 修改 → 保存 */
-  async update(mutator, { readAfterWrite = true } = {}) {
-    const state = await this.getState();
-    await mutator(state);
-    await this.saveState(state);
-    return readAfterWrite ? this.getState() : this.normalizeState(state);
+  /** 事务内更新：SELECT ... FOR UPDATE 锁定单行，避免并发覆盖 */
+  async update(mutator, { skipBackup = false } = {}) {
+    await this._ensureTable();
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const result = await client.query("SELECT data FROM quiz_data WHERE id = 1 FOR UPDATE");
+      const state = this.normalizeState(result.rows[0]?.data || {});
+      await mutator(state);
+      const normalized = this.normalizeState(state);
+      await client.query(
+        "UPDATE quiz_data SET data = $1, updated_at = NOW() WHERE id = 1",
+        [JSON.stringify(normalized)]
+      );
+      await client.query("COMMIT");
+      return normalized;
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // 连接已断开时保留原始错误
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /** 规范化状态结构 */

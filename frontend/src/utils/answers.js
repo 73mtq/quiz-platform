@@ -37,3 +37,17 @@ export function isChoiceAnswerCorrect(question, selectedAnswers) {
   const correct = getChoiceAnswerTexts(question).map(normalizeChoiceText).sort();
   return selected.length === correct.length && selected.every((item, index) => item === correct[index]);
 }
+
+export function isFillBlankAnswerCorrect(question, selectedAnswers = []) {
+  const answers = (selectedAnswers || []).map((item) => String(item ?? "").trim());
+  const blanks = question.answer || [];
+  const blanksCorrect = answers.map((userAnswerText, index) => {
+    if (!userAnswerText) return false;
+    const acceptable = String(blanks[index] || "")
+      .split(/[；;|、]/)
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
+    return acceptable.includes(userAnswerText.toLowerCase());
+  });
+  return blanksCorrect.length === blanks.length && blanksCorrect.every(Boolean);
+}

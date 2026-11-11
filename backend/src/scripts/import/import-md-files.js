@@ -13,7 +13,7 @@ const COURSE_NAME = process.argv[2] || "毛概";
 const DIR = process.argv[3];
 
 if (!DIR) {
-  console.error("用法：API_URL=... node import-md-files.js <课程名> <目录路径>");
+  console.error("用法：API_URL=... node backend/src/scripts/import/import-md-files.js <课程名> <目录路径>");
   process.exit(1);
 }
 

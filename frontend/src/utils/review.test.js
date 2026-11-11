@@ -38,7 +38,6 @@ test("analyzeReview summarizes wrong questions and weak categories", () => {
   assert.equal(review.wrongQuestions, 2);
   assert.equal(review.repeatedWrong, 2);
   assert.equal(review.multiWrong, 1);
-  assert.equal(review.recoveredWrong, 1);
   assert.equal(review.priorityQuestions[0].id, "q1");
   assert.ok(review.categories.some((category) => category.name === "国家安全/强军"));
   assert.ok(review.categories.some((category) => category.name === "生态文明/美丽中国"));

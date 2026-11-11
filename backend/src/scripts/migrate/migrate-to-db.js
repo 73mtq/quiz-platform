@@ -2,7 +2,7 @@
  * 数据迁移脚本：将本地 JSON 文件数据导入 PostgreSQL 数据库
  *
  * 用法：
- *   DATABASE_URL="postgresql://..." node backend/src/scripts/migrate-to-db.js
+ *   DATABASE_URL="postgresql://..." node backend/src/scripts/migrate/migrate-to-db.js
  *
  * 可选环境变量：
  *   SOURCE_FILE  自定义源文件路径（默认 data/quiz-data.json）
@@ -11,7 +11,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
-import { rootDir } from "../config.js";
+import { rootDir } from "../../config.js";
 
 const { Pool } = pg;
 
@@ -19,7 +19,7 @@ async function main() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     console.error("❌ 请设置 DATABASE_URL 环境变量");
-    console.error("   DATABASE_URL=\"postgresql://...\" node backend/src/scripts/migrate-to-db.js");
+    console.error("   DATABASE_URL=\"postgresql://...\" node backend/src/scripts/migrate/migrate-to-db.js");
     process.exit(1);
   }
 

@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(currentDir, "../../..");
+const repoRoot = path.resolve(currentDir, "../../../..");
 const outputFile = process.argv[3] ? path.resolve(process.argv[3]) : path.join(repoRoot, "dist/maogai-quiz.html");
 const defaultProgressFile = path.join(repoRoot, "data", "maogai-progress.json");
 const progressFile = process.argv[4] ? path.resolve(process.argv[4]) : defaultProgressFile;

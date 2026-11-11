@@ -11,27 +11,36 @@ export class AiRecognitionService {
       throw new Error("缺少有效的图片 data URL");
     }
 
-    const response = await fetch(`${this.config.mimoBaseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${this.config.mimoApiKey}`,
-        "content-type": "application/json"
-      },
-      body: JSON.stringify({
-        model: this.config.mimoModel,
-        messages: [
-          { role: "system", content: prompt() },
-          {
-            role: "user",
-            content: [
-              { type: "image_url", image_url: { url: imageDataUrl } },
-              { type: "text", text: "请抽取图片中的所有题目（选择题和填空题），严格输出 JSON。" }
-            ]
-          }
-        ],
-        max_completion_tokens: 4096
-      })
-    });
+    let response;
+    try {
+      response = await fetch(`${this.config.mimoBaseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${this.config.mimoApiKey}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          model: this.config.mimoModel,
+          messages: [
+            { role: "system", content: prompt() },
+            {
+              role: "user",
+              content: [
+                { type: "image_url", image_url: { url: imageDataUrl } },
+                { type: "text", text: "请抽取图片中的所有题目（选择题和填空题），严格输出 JSON。" }
+              ]
+            }
+          ],
+          max_completion_tokens: 4096
+        }),
+        signal: AbortSignal.timeout(this.config.mimoTimeoutMs)
+      });
+    } catch (error) {
+      if (error.name === "TimeoutError") {
+        throw new Error(`AI 请求超时（${Math.round(this.config.mimoTimeoutMs / 1000)} 秒），请稍后重试或换更小的图片`);
+      }
+      throw error;
+    }
 
     const payload = await response.json();
     if (!response.ok) {

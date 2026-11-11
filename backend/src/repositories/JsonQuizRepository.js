@@ -44,34 +44,56 @@ export class JsonQuizRepository {
   constructor(filePath) {
     this.filePath = filePath;
     this.backupLimit = 80;
+    this._cache = null;
+    this._writeQueue = Promise.resolve();
   }
 
+  /** 读取状态；命中缓存时只复制内存对象 */
   async getState() {
     await fs.mkdir(path.dirname(this.filePath), { recursive: true });
-    try {
-      const content = (await fs.readFile(this.filePath, "utf8")).replace(/^\uFEFF/, "");
-      const parsed = JSON.parse(content);
-      return this.normalizeState(parsed);
-    } catch {
-      const state = this.normalizeState({});
-      await this.saveState(state);
-      return state;
+    const stat = await fs.stat(this.filePath).catch(() => null);
+    if (stat && this._cache && this._cache.mtimeMs === stat.mtimeMs && this._cache.size === stat.size) {
+      return structuredClone(this._cache.state);
     }
+
+    let content;
+    try {
+      content = await fs.readFile(this.filePath, "utf8");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+      const state = this.normalizeState({});
+      await this._writeState(state, { skipBackup: true });
+      return structuredClone(state);
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(content.replace(/^\uFEFF/, ""));
+    } catch (error) {
+      throw new Error(`题库文件解析失败，原文件保持原样：${this.filePath}（${error.message}）`);
+    }
+
+    const state = this.normalizeState(parsed);
+    this._cache = { mtimeMs: stat.mtimeMs, size: stat.size, state };
+    return structuredClone(state);
   }
 
   async saveState(state, { skipBackup = false } = {}) {
-    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
     const normalized = this.normalizeState(state);
-    const nextContent = `${JSON.stringify(normalized, null, 2)}\n`;
-    if (!skipBackup) await this.backupExistingFile(nextContent);
-    await fs.writeFile(this.filePath, nextContent, "utf8");
+    await this._writeState(normalized, { skipBackup });
   }
 
-  async update(mutator, { skipBackup = false, readAfterWrite = true } = {}) {
-    const state = await this.getState();
-    await mutator(state);
-    await this.saveState(state, { skipBackup });
-    return readAfterWrite ? this.getState() : state;
+  /** 串行执行 读取 → 修改 → 保存，避免并发覆盖 */
+  async update(mutator, { skipBackup = false } = {}) {
+    const run = this._writeQueue.then(async () => {
+      const state = await this.getState();
+      await mutator(state);
+      const normalized = this.normalizeState(state);
+      await this._writeState(normalized, { skipBackup });
+      return normalized;
+    });
+    this._writeQueue = run.then(() => undefined, () => undefined);
+    return run;
   }
 
   normalizeState(state) {
@@ -157,6 +179,18 @@ export class JsonQuizRepository {
     }
 
     return backups.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  /** 写入主文件：先写临时文件再替换，保证中断时旧文件完整 */
+  async _writeState(state, { skipBackup = false } = {}) {
+    await fs.mkdir(path.dirname(this.filePath), { recursive: true });
+    const nextContent = `${JSON.stringify(state, null, 2)}\n`;
+    if (!skipBackup) await this.backupExistingFile(nextContent);
+    const tempPath = `${this.filePath}.tmp`;
+    await fs.writeFile(tempPath, nextContent, "utf8");
+    await fs.rename(tempPath, this.filePath);
+    const stat = await fs.stat(this.filePath);
+    this._cache = { mtimeMs: stat.mtimeMs, size: stat.size, state };
   }
 
   async backupExistingFile(nextContent) {

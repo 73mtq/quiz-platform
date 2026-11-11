@@ -1,6 +1,6 @@
-import { dataFile } from "../config.js";
-import { JsonQuizRepository } from "../repositories/JsonQuizRepository.js";
-import { applyStudyNotesToState } from "../services/StudyNoteGenerator.js";
+import { dataFile } from "../../config.js";
+import { JsonQuizRepository } from "../../repositories/JsonQuizRepository.js";
+import { applyStudyNotesToState } from "../../services/StudyNoteGenerator.js";
 
 const overwrite = process.argv.includes("--overwrite");
 const repository = new JsonQuizRepository(dataFile);

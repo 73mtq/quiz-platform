@@ -4,12 +4,15 @@ import { frontendDir } from "./config.js";
 import { applyStudyNotesToState } from "./services/StudyNoteGenerator.js";
 import {
   areChoiceAnswerSetsEqual,
+  areFillBlankAnswersCorrect,
   createId,
   getChoiceAnswerTexts,
   getWrongPracticeQuestions,
+  httpError,
   normalizeChoiceText,
   normalizeQuestion,
   readBody,
+  sendBody,
   sendJson,
   updateQuestionReview,
   validateQuestion
@@ -24,14 +27,18 @@ const mimeTypes = {
 
 export function createRouter({ repository, aiService }) {
   return async function route(req, res) {
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
 
-    if (url.pathname.startsWith("/api/")) {
-      await handleApi(req, res, url, repository, aiService);
-      return;
+      if (url.pathname.startsWith("/api/")) {
+        await handleApi(req, res, url, repository, aiService);
+        return;
+      }
+
+      await serveStatic(req, res, url);
+    } catch (error) {
+      await sendJson(req, res, error.statusCode || 500, { error: error.message || "服务器错误" });
     }
-
-    await serveStatic(url, res);
   };
 }
 
@@ -40,17 +47,17 @@ async function handleApi(req, res, url, repository, aiService) {
     const body = req.method === "POST" ? parseBody(await readBody(req)) : {};
 
     if (req.method === "GET" && url.pathname === "/api/state") {
-      sendJson(res, 200, await repository.getState());
+      await sendJson(req, res, 200, await repository.getState());
       return;
     }
 
     if (req.method === "GET" && url.pathname === "/api/export") {
-      sendJson(res, 200, await repository.getState());
+      await sendJson(req, res, 200, await repository.getState());
       return;
     }
 
     if (req.method === "GET" && url.pathname === "/api/backups") {
-      sendJson(res, 200, { backups: await repository.listBackups() });
+      await sendJson(req, res, 200, { backups: await repository.listBackups() });
       return;
     }
 
@@ -59,7 +66,7 @@ async function handleApi(req, res, url, repository, aiService) {
       const state = await repository.update((draft) => {
         result = applyStudyNotesToState(draft, { overwrite: Boolean(body.overwrite) });
       });
-      sendJson(res, 200, { state, result });
+      await sendJson(req, res, 200, { state, result });
       return;
     }
 
@@ -69,7 +76,7 @@ async function handleApi(req, res, url, repository, aiService) {
         draft.courses.push(course);
         draft.activeCourseId = course.id;
       });
-      sendJson(res, 200, state);
+      await sendJson(req, res, 200, state);
       return;
     }
 
@@ -79,8 +86,8 @@ async function handleApi(req, res, url, repository, aiService) {
         if (draft.courses.some((course) => course.id === body.courseId)) {
           draft.activeCourseId = body.courseId;
         }
-      }, { skipBackup: true, readAfterWrite: !lightResponse });
-      sendJson(res, 200, lightResponse ? { activeCourseId: state.activeCourseId } : state);
+      }, { skipBackup: true });
+      await sendJson(req, res, 200, lightResponse ? { activeCourseId: state.activeCourseId } : state);
       return;
     }
 
@@ -90,7 +97,7 @@ async function handleApi(req, res, url, repository, aiService) {
         draft.courses = draft.courses.filter((course) => course.id !== body.courseId);
         draft.activeCourseId = draft.courses[0].id;
       });
-      sendJson(res, 200, state);
+      await sendJson(req, res, 200, state);
       return;
     }
 
@@ -101,7 +108,7 @@ async function handleApi(req, res, url, repository, aiService) {
         importResult = buildImportResult(body.questions || [], course.questions);
         course.questions.push(...importResult.accepted);
       });
-      sendJson(res, 200, { state, importResult });
+      await sendJson(req, res, 200, { state, importResult });
       return;
     }
 
@@ -112,7 +119,7 @@ async function handleApi(req, res, url, repository, aiService) {
         course.practice.remainingIds = course.practice.remainingIds.filter((id) => id !== body.questionId);
         if (course.practice.currentQuestionId === body.questionId) course.practice.currentQuestionId = null;
       });
-      sendJson(res, 200, state);
+      await sendJson(req, res, 200, state);
       return;
     }
 
@@ -120,21 +127,21 @@ async function handleApi(req, res, url, repository, aiService) {
       const { questionId, stem, options, answer, explanation, memoryTip } = body;
       const lightResponse = url.searchParams.get("light") === "1";
       if (!questionId) {
-        sendJson(res, 400, { error: "缺少题目 ID" });
+        await sendJson(req, res, 400, { error: "缺少题目 ID" });
         return;
       }
       const state = await repository.update((draft) => {
         const result = repository.updateQuestion(draft, questionId, { stem, options, answer, explanation, memoryTip });
         if (!result) throw new Error("题目不存在");
-      }, { readAfterWrite: !lightResponse });
-      sendJson(res, 200, lightResponse ? { questionId } : state);
+      });
+      await sendJson(req, res, 200, lightResponse ? { questionId } : state);
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/questions/bookmark") {
       const { questionId } = body;
       if (!questionId) {
-        sendJson(res, 400, { error: "缺少题目 ID" });
+        await sendJson(req, res, 400, { error: "缺少题目 ID" });
         return;
       }
       const state = await repository.update((draft) => {
@@ -143,7 +150,7 @@ async function handleApi(req, res, url, repository, aiService) {
         if (!question) throw new Error("题目不存在");
         question.bookmarked = !question.bookmarked;
       });
-      sendJson(res, 200, state);
+      await sendJson(req, res, 200, state);
       return;
     }
 
@@ -158,8 +165,8 @@ async function handleApi(req, res, url, repository, aiService) {
         }
         course.practice.currentQuestionId = course.practice.remainingIds.shift() || null;
         course.practice.lastAnswer = null;
-      });
-      sendJson(res, 200, state);
+      }, { skipBackup: true });
+      await sendJson(req, res, 200, state);
       return;
     }
 
@@ -187,12 +194,7 @@ async function handleApi(req, res, url, repository, aiService) {
         if (question.type === "fill-blank") {
           // 填空题：逐空匹配，每空任一可接受答案匹配即算对
           selectedAnswers = (body.selectedAnswers || []).map((item) => String(item).trim());
-          const blanksCorrect = selectedAnswers.map((userAns, i) => {
-            if (!userAns) return false;
-            const acceptable = (question.answer[i] || "").split(/[；;|、]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-            return acceptable.includes(userAns.toLowerCase());
-          });
-          correct = blanksCorrect.length === question.answer.length && blanksCorrect.every(Boolean);
+          correct = areFillBlankAnswersCorrect(question, selectedAnswers);
         } else {
           selectedAnswers = getChoiceAnswerTexts(question, body.selectedAnswers || []);
           correct = areChoiceAnswerSetsEqual(question, selectedAnswers);
@@ -221,8 +223,8 @@ async function handleApi(req, res, url, repository, aiService) {
           ...course.practice.lastAnswer,
           correctAnswer: question.answer
         };
-      });
-      sendJson(res, 200, { state, answerResult });
+      }, { skipBackup: true });
+      await sendJson(req, res, 200, { state, answerResult });
       return;
     }
 
@@ -230,8 +232,8 @@ async function handleApi(req, res, url, repository, aiService) {
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
         startPracticeRound(course, practiceInput(body, course.practice));
-      });
-      sendJson(res, 200, state);
+      }, { skipBackup: true });
+      await sendJson(req, res, 200, state);
       return;
     }
 
@@ -240,45 +242,72 @@ async function handleApi(req, res, url, repository, aiService) {
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
         summary = finishExam(course, { timedOut: Boolean(body.timedOut) });
-      });
-      sendJson(res, 200, { state, summary });
+      }, { skipBackup: true });
+      await sendJson(req, res, 200, { state, summary });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/recognize-image") {
       const result = await aiService.recognizeImage(body.imageDataUrl);
-      sendJson(res, 200, result);
+      await sendJson(req, res, 200, result);
       return;
     }
 
-    sendJson(res, 404, { error: "API not found" });
+    await sendJson(req, res, 404, { error: "API not found" });
   } catch (error) {
-    sendJson(res, 500, { error: error.message || "服务器错误" });
+    await sendJson(req, res, error.statusCode || 500, { error: error.message || "服务器错误" });
   }
 }
 
-async function serveStatic(url, res) {
-  const requestPath = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname).replace(/^\/+/, "");
+async function serveStatic(req, res, url) {
+  let requestPath;
+  try {
+    requestPath = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname).replace(/^\/+/, "");
+  } catch {
+    await sendJson(req, res, 400, { error: "非法的请求路径" });
+    return;
+  }
+
   const target = path.join(frontendDir, path.normalize(requestPath));
   const relative = path.relative(frontendDir, target);
   if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    res.writeHead(403);
-    res.end("Forbidden");
+    await sendBody(req, res, 403, "text/plain; charset=utf-8", Buffer.from("Forbidden", "utf8"));
     return;
   }
+
+  let stat;
   try {
-    const data = await fs.readFile(target);
-    res.writeHead(200, { "content-type": mimeTypes[path.extname(target)] || "application/octet-stream" });
-    res.end(data);
+    stat = await fs.stat(target);
   } catch {
-    res.writeHead(404);
-    res.end("Not found");
+    await sendBody(req, res, 404, "text/plain; charset=utf-8", Buffer.from("Not found", "utf8"));
+    return;
   }
+  if (!stat.isFile()) {
+    await sendBody(req, res, 404, "text/plain; charset=utf-8", Buffer.from("Not found", "utf8"));
+    return;
+  }
+
+  const etag = `W/"${stat.size}-${Math.round(stat.mtimeMs)}"`;
+  if (req.headers["if-none-match"] === etag) {
+    res.writeHead(304, { etag, "cache-control": "no-cache" });
+    res.end();
+    return;
+  }
+
+  const data = await fs.readFile(target);
+  await sendBody(req, res, 200, mimeTypes[path.extname(target)] || "application/octet-stream", data, {
+    etag,
+    "cache-control": "no-cache"
+  });
 }
 
 function parseBody(raw) {
   if (!raw) return {};
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw httpError(400, "请求体不是合法 JSON");
+  }
 }
 
 function practiceInput(body, practice = {}) {

@@ -1,10 +1,11 @@
 import { api } from "./api/client.js";
 import { activeCourse, clearCurrentAnswer, currentQuestion, persistFeedbackSettings, runtime, settings } from "./state/appState.js";
 import { renderApp, renderImportResult, updateBankListOnly, updatePracticeOnly } from "./ui/render.js";
-import { getChoiceAnswerTexts, isChoiceAnswerCorrect, normalizeChoiceText } from "./utils/answers.js";
+import { getChoiceAnswerTexts, isChoiceAnswerCorrect, isFillBlankAnswerCorrect, normalizeChoiceText } from "./utils/answers.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
 import { applyLocalPracticeConfig, isPracticeRoundComplete, shouldAutoNextAfterSubmit } from "./utils/practiceFlow.js";
+import { applyQuestionReview } from "./utils/review.js";
 
 const $ = (selector) => document.querySelector(selector);
 const EXAM_MODES = new Set(["exam", "exam-wrong"]);
@@ -12,6 +13,7 @@ let activeCourseSync = Promise.resolve();
 let activeCourseSyncError = null;
 let activeCourseSwitchToken = 0;
 let bankSearchRenderTimer = null;
+let toastTimer = null;
 
 const sample = `1. 下列哪项活动不是项目（）。
 A. 开发操作系统
@@ -20,6 +22,24 @@ C. 生产汽车轮胎
 D. 策划野餐活动
 答案：C
 解析：生产汽车轮胎属于运营活动。`;
+
+function showToast(message) {
+  const toast = $("#toast");
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add("is-visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 4000);
+}
+
+async function request(action, failureMessage) {
+  try {
+    return { ok: true, value: await action() };
+  } catch (error) {
+    showToast(`${failureMessage}：${error.message || "请求失败"}`);
+    return { ok: false, value: null };
+  }
+}
 
 function bind() {
   document.querySelectorAll(".tabs button").forEach((button) => {
@@ -236,10 +256,11 @@ async function importText() {
   if (!parsed.length) return alert("未识别到完整题目。选择题请确认包含题干、至少 2 个选项和答案；填空题请确认包含题干和答案。");
 
   if (!(await ensureActiveCourseSynced())) return;
-  const result = await api.addQuestions(parsed);
-  runtime.state = result.state;
-  $("#status").textContent = `文本导入完成：成功 ${result.importResult.accepted.length} 道，失败 ${result.importResult.rejected.length} 道。`;
-  renderImportResult(result.importResult, "文本导入");
+  const result = await request(() => api.addQuestions(parsed), "文本导入失败");
+  if (!result.ok) return;
+  runtime.state = result.value.state;
+  $("#status").textContent = `文本导入完成：成功 ${result.value.importResult.accepted.length} 道，失败 ${result.value.importResult.rejected.length} 道。`;
+  renderImportResult(result.value.importResult, "文本导入");
   renderApp();
 }
 
@@ -275,11 +296,14 @@ async function setActiveCourse(event) {
       }
       const status = $("#status");
       if (status) status.textContent = `课程切换同步失败：${error.message}`;
+      showToast(`课程切换同步失败：${error.message}`);
     });
 }
 
 async function addCourse() {
-  runtime.state = await api.addCourse($("#courseName").value.trim() || "新课程");
+  const result = await request(() => api.addCourse($("#courseName").value.trim() || "新课程"), "新增课程失败");
+  if (!result.ok) return;
+  runtime.state = result.value;
   $("#courseName").value = "";
   clearCurrentAnswer();
   renderApp();
@@ -288,7 +312,9 @@ async function addCourse() {
 async function deleteCourse() {
   if (!confirm("确认删除当前课程？该课程下的题目也会删除。")) return;
   if (!(await ensureActiveCourseSynced())) return;
-  runtime.state = await api.deleteCourse(activeCourse().id);
+  const result = await request(() => api.deleteCourse(activeCourse().id), "删除课程失败");
+  if (!result.ok) return;
+  runtime.state = result.value;
   clearCurrentAnswer();
   renderApp();
 }
@@ -307,7 +333,9 @@ async function nextQuestion() {
   if (isExamMode(mode)) {
     if (prevId) runtime.questionHistory.push(prevId);
     const count = mode === "exam" ? runtime.examCount : runtime.practiceCount;
-    runtime.state = await api.nextQuestion(mode, count, runtime.examTimeLimitMinutes);
+    const result = await request(() => api.nextQuestion(mode, count, runtime.examTimeLimitMinutes), "加载下一题失败");
+    if (!result.ok) return;
+    runtime.state = result.value;
     clearCurrentAnswer();
     updatePracticeOnly();
     updatePrevBtn();
@@ -317,7 +345,9 @@ async function nextQuestion() {
 
   if (!course.practice.remainingIds.length) {
     // 题目用完了，需要重新洗牌 —— 必须等服务端返回新的 remainingIds
-    runtime.state = await api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
+    const result = await request(() => api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes), "加载下一题失败");
+    if (!result.ok) return;
+    runtime.state = result.value;
     clearCurrentAnswer();
     updatePracticeOnly();
     updatePrevBtn();
@@ -348,7 +378,9 @@ async function nextQuestion() {
     localCourse.practice.totalCorrect = serverCourse.practice.totalCorrect;
     localCourse.practice.exam = serverCourse.practice.exam;
     setupExamTimer();
-  }).catch(() => {});
+  }).catch((error) => {
+    showToast(`进度同步失败：${error.message || "请求失败"}`);
+  });
 }
 
 function prevQuestion() {
@@ -389,12 +421,7 @@ async function submitAnswer() {
   // 乐观更新：本地立即判断对错，不等服务端
   let correct;
   if (isFillBlank) {
-    const blanksCorrect = runtime.selectedAnswers.map((userAns, i) => {
-      if (!userAns) return false;
-      const acceptable = (question.answer[i] || "").split(/[；;|、]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-      return acceptable.includes(userAns.toLowerCase());
-    });
-    correct = blanksCorrect.length === question.answer.length && blanksCorrect.every(Boolean);
+    correct = isFillBlankAnswerCorrect(question, runtime.selectedAnswers);
   } else {
     runtime.selectedAnswers = getChoiceAnswerTexts(question, runtime.selectedAnswers);
     correct = isChoiceAnswerCorrect(question, runtime.selectedAnswers);
@@ -406,7 +433,6 @@ async function submitAnswer() {
     selectedAnswers: runtime.selectedAnswers,
     correct
   };
-  runtime.submittedQuestionId = question.id;
 
   // 更新本地统计
   const course = activeCourse();
@@ -420,7 +446,7 @@ async function submitAnswer() {
   } else {
     question.wrongCount = (question.wrongCount || 0) + 1;
   }
-  updateLocalQuestionReview(question, { correct, selectedAnswers: runtime.selectedAnswers, answeredAt });
+  applyQuestionReview(question, { correct, selectedAnswers: runtime.selectedAnswers, answeredAt });
   course.practice.lastAnswer = runtime.answerFeedback;
   updatePracticeOnly();
 
@@ -460,7 +486,9 @@ async function submitAnswer() {
       localQ.memoryTip = serverQ.memoryTip;
     }
     setupExamTimer();
-  }).catch(() => {});
+  }).catch((error) => {
+    showToast(`答题结果同步失败：${error.message || "请求失败"}`);
+  });
 
   // 答对自动下一题（基本无延迟，仅留极短时间显示对错反馈）
   if (willAutoNext) {
@@ -470,36 +498,12 @@ async function submitAnswer() {
   }
 }
 
-function updateLocalQuestionReview(question, { correct, selectedAnswers, answeredAt }) {
-  const review = {
-    lastAnsweredAt: question.review?.lastAnsweredAt || "",
-    lastWrongAt: question.review?.lastWrongAt || "",
-    lastCorrectAt: question.review?.lastCorrectAt || "",
-    consecutiveCorrect: Number(question.review?.consecutiveCorrect) || 0,
-    masteredAt: question.review?.masteredAt || "",
-    lastSelectedAnswers: Array.isArray(question.review?.lastSelectedAnswers) ? question.review.lastSelectedAnswers : []
-  };
-
-  review.lastAnsweredAt = answeredAt;
-  review.lastSelectedAnswers = (selectedAnswers || []).map((item) => String(item));
-  if (correct) {
-    review.lastCorrectAt = answeredAt;
-    review.consecutiveCorrect += 1;
-    if ((question.wrongCount || 0) > 0 && review.consecutiveCorrect >= 2) {
-      review.masteredAt = review.masteredAt || answeredAt;
-    }
-  } else {
-    review.lastWrongAt = answeredAt;
-    review.consecutiveCorrect = 0;
-    review.masteredAt = "";
-  }
-  question.review = review;
-}
-
 async function resetRound() {
   if (!(await ensureActiveCourseSynced())) return;
   stageLocalPracticeRound();
-  runtime.state = await api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes);
+  const result = await request(() => api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes), "重置本轮失败");
+  if (!result.ok) return;
+  runtime.state = result.value;
   clearCurrentAnswer();
   runtime.questionHistory = [];
   renderApp();
@@ -513,8 +517,9 @@ async function finishExam(timedOut = false) {
   runtime.finishingExam = true;
   try {
     if (!(await ensureActiveCourseSynced())) return;
-    const result = await api.finishExam(timedOut);
-    runtime.state = result.state;
+    const result = await request(() => api.finishExam(timedOut), "结束模拟失败");
+    if (!result.ok) return;
+    runtime.state = result.value.state;
     clearCurrentAnswer();
     runtime.questionHistory = [];
     renderApp();
@@ -533,7 +538,9 @@ async function handleExamAction(event) {
     runtime.practiceMode = "exam-wrong";
     localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
     if (!(await ensureActiveCourseSynced())) return;
-    runtime.state = await api.resetRound("exam-wrong", runtime.practiceCount, runtime.examTimeLimitMinutes);
+    const result = await request(() => api.resetRound("exam-wrong", runtime.practiceCount, runtime.examTimeLimitMinutes), "打开错题复盘失败");
+    if (!result.ok) return;
+    runtime.state = result.value;
     clearCurrentAnswer();
     runtime.questionHistory = [];
     renderApp();
@@ -613,7 +620,9 @@ async function handleReviewActions(event) {
     const modeRadio = document.querySelector("input[name='practiceMode'][value='wrong']");
     if (modeRadio) modeRadio.checked = true;
     if (!(await ensureActiveCourseSynced())) return;
-    runtime.state = await api.resetRound("wrong", runtime.practiceCount, runtime.examTimeLimitMinutes);
+    const result = await request(() => api.resetRound("wrong", runtime.practiceCount, runtime.examTimeLimitMinutes), "开始错题重做失败");
+    if (!result.ok) return;
+    runtime.state = result.value;
     clearCurrentAnswer();
     runtime.questionHistory = [];
     switchTab("practicePanel");
@@ -636,7 +645,9 @@ async function deleteQuestion(event) {
   const id = event.target.dataset.delete;
   if (!id || !confirm("确认删除这道题？")) return;
   if (!(await ensureActiveCourseSynced())) return;
-  runtime.state = await api.deleteQuestion(id);
+  const result = await request(() => api.deleteQuestion(id), "删除题目失败");
+  if (!result.ok) return;
+  runtime.state = result.value;
   clearCurrentAnswer();
   renderApp();
 }
@@ -673,7 +684,9 @@ async function handleBookmarkClick(event) {
 
   const questionId = btn.dataset.bookmark;
   if (!(await ensureActiveCourseSynced())) return;
-  runtime.state = await api.bookmarkQuestion(questionId);
+  const result = await request(() => api.bookmarkQuestion(questionId), "收藏状态保存失败");
+  if (!result.ok) return;
+  runtime.state = result.value;
   renderApp();
 }
 
@@ -848,12 +861,15 @@ async function saveQuestionForm(formId) {
 
   if (!(await ensureActiveCourseSynced())) return;
   if (formId === "create") {
-    const result = await api.addQuestions([{ ...data, answer: data.answer }]);
-    runtime.state = result.state;
+    const result = await request(() => api.addQuestions([data]), "创建题目失败");
+    if (!result.ok) return;
+    runtime.state = result.value.state;
     runtime.creatingQuestion = false;
   } else {
     const questionId = formId.replace("edit-", "");
-    runtime.state = await api.updateQuestion(questionId, data);
+    const result = await request(() => api.updateQuestion(questionId, data), "保存题目失败");
+    if (!result.ok) return;
+    runtime.state = result.value;
     runtime.editingQuestionId = null;
   }
 
@@ -895,34 +911,31 @@ function bindKeyboardShortcuts() {
 
     const key = event.key.toUpperCase();
 
-    // A/B/C/D 选择选项
-    if (["A", "B", "C", "D"].includes(key)) {
-      const question = currentQuestion();
-      if (!question || runtime.answerFeedback) return;
+    // 单选题/多选题快捷键：按当前题目的选项字母（A–H）选择
+    const question = currentQuestion();
+    if (/^[A-Z]$/.test(key) && question && !runtime.answerFeedback) {
+      const option = question.options.find((opt) => String(opt.key || "").toUpperCase() === key);
+      if (option) {
+        const isMulti = question.answer.length > 1;
+        const input = document.querySelector(`input[name='answer'][data-key='${key}']`);
+        if (!input) return;
 
-      // 检查选项是否存在
-      const option = question.options.find((opt) => opt.key === key);
-      if (!option) return;
-
-      const isMulti = question.answer.length > 1;
-      const input = document.querySelector(`input[name='answer'][data-key='${key}']`);
-      if (!input) return;
-
-      if (isMulti) {
-        input.checked = !input.checked;
-        if (input.checked) {
-          runtime.selectedAnswers = getChoiceAnswerTexts(question, [...runtime.selectedAnswers, option.text]);
+        if (isMulti) {
+          input.checked = !input.checked;
+          if (input.checked) {
+            runtime.selectedAnswers = getChoiceAnswerTexts(question, [...runtime.selectedAnswers, option.text]);
+          } else {
+            runtime.selectedAnswers = runtime.selectedAnswers.filter((v) => normalizeChoiceText(v) !== normalizeChoiceText(option.text));
+          }
         } else {
-          runtime.selectedAnswers = runtime.selectedAnswers.filter((v) => normalizeChoiceText(v) !== normalizeChoiceText(option.text));
+          document.querySelectorAll("input[name='answer']").forEach((el) => {
+            el.checked = false;
+          });
+          input.checked = true;
+          runtime.selectedAnswers = getChoiceAnswerTexts(question, [option.text]);
         }
-      } else {
-        document.querySelectorAll("input[name='answer']").forEach((el) => {
-          el.checked = false;
-        });
-        input.checked = true;
-        runtime.selectedAnswers = getChoiceAnswerTexts(question, [option.text]);
+        return;
       }
-      return;
     }
 
     // Enter 提交答案
@@ -958,7 +971,6 @@ try {
   if (course.practice.lastAnswer) {
     runtime.answerFeedback = course.practice.lastAnswer;
     runtime.selectedAnswers = course.practice.lastAnswer.selectedAnswers || [];
-    runtime.submittedQuestionId = course.practice.lastAnswer.questionId;
   }
 
   // 初始化刷题模式 UI
