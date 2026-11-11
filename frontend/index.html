@@ -3,35 +3,49 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#c05529">
+  <meta name="theme-color" content="#ffffff">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>刷题平台 · 课程题库与随机练习</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>">
+  <link rel="icon" type="image/svg+xml" href="./assets/pixel/cards.svg">
   <link rel="stylesheet" href="./src/styles.css">
 </head>
 <body>
   <main class="app">
     <header class="hero">
-      <div>
-        <p class="eyebrow">Quiz Platform</p>
-        <h1>课程题库与随机刷题</h1>
-        <p>支持课程分组、文本导入、AI 图片识别、随机不重复刷题与错题追踪。</p>
+      <div class="hero-copy">
+        <p class="eyebrow">Quiz Platform · 学习终端</p>
+        <h1>课程题库<br><span class="hl">随机刷题</span></h1>
+        <p class="hero-desc">支持课程分组、文本导入、AI 图片识别、随机不重复刷题与错题追踪。</p>
       </div>
-      <div class="metric">
-        <strong id="questionCount">0</strong>
-        <span>当前课程题数</span>
+      <div class="hero-side">
+        <div class="hero-stickers" aria-hidden="true">
+          <img class="pixel-sticker sticker-cards" src="./assets/pixel/cards.svg" alt="" width="116" height="116">
+          <img class="pixel-sticker sticker-pencil" src="./assets/pixel/pencil.svg" alt="" width="78" height="78">
+        </div>
+        <div class="metric">
+          <strong id="questionCount">0</strong>
+          <span>当前课程题数</span>
+        </div>
       </div>
     </header>
 
-    <section class="toolbar">
-      <select id="courseSelect"></select>
-      <input id="courseName" placeholder="新课程名称">
-      <button id="addCourseBtn">新增课程</button>
-      <button id="deleteCourseBtn" class="ghost">删除课程</button>
+    <section class="toolbar" aria-label="课程管理">
+      <label class="field">
+        <span class="field-label">当前课程</span>
+        <select id="courseSelect"></select>
+      </label>
+      <label class="field">
+        <span class="field-label">新建课程</span>
+        <input id="courseName" placeholder="输入课程名称">
+      </label>
+      <div class="toolbar-actions">
+        <button id="addCourseBtn">新增课程</button>
+        <button id="deleteCourseBtn" class="ghost">删除课程</button>
+      </div>
     </section>
 
-    <nav class="tabs">
+    <nav class="tabs" aria-label="功能导航">
       <button class="active" data-tab="importPanel">导入</button>
       <button data-tab="practicePanel">刷题</button>
       <button data-tab="reviewPanel">复习</button>
@@ -42,10 +56,13 @@
       <h2>导入题目</h2>
       <textarea id="sourceText" placeholder="1. 题干&#10;A. 选项&#10;B. 选项&#10;答案：A&#10;解析：可选"></textarea>
       <div class="actions">
-        <button id="sampleBtn">示例</button>
+        <button id="sampleBtn" class="ghost">示例</button>
         <button id="importTextBtn">文本导入</button>
-        <input id="imageInput" type="file" accept="image/*">
-        <button id="aiBtn">AI 识别图片</button>
+        <label class="file-pick">
+          <input id="imageInput" type="file" accept="image/*">
+          <span class="file-pick-text">选择图片</span>
+        </label>
+        <button id="aiBtn" class="ghost">AI 识别图片</button>
       </div>
       <p id="status" class="status"></p>
       <div id="importResult" class="import-result"></div>
@@ -57,18 +74,18 @@
         <button id="resetRoundBtn" class="ghost">重置本轮</button>
       </div>
       <div class="practice-mode-bar">
-        <label class="practice-mode-label">刷题模式：</label>
+        <span class="practice-mode-label">刷题模式</span>
         <label class="practice-mode-option">
-          <input type="radio" name="practiceMode" value="all" checked> 全部题目
+          <input type="radio" name="practiceMode" value="all" checked><span>全部题目</span>
         </label>
         <label class="practice-mode-option">
-          <input type="radio" name="practiceMode" value="count"> 指定数量
+          <input type="radio" name="practiceMode" value="count"><span>指定数量</span>
         </label>
         <label class="practice-mode-option">
-          <input type="radio" name="practiceMode" value="wrong"> 错题重做
+          <input type="radio" name="practiceMode" value="wrong"><span>错题重做</span>
         </label>
         <label class="practice-mode-option">
-          <input type="radio" name="practiceMode" value="exam"> 限时模拟
+          <input type="radio" name="practiceMode" value="exam"><span>限时模拟</span>
         </label>
         <input id="practiceCountInput" type="number" min="1" value="10" class="practice-count-input" style="display:none">
         <span id="practiceCountHint" class="practice-count-hint" style="display:none">题</span>
@@ -81,10 +98,10 @@
       <div id="roundBoundary" class="round-boundary"></div>
       <div id="accuracy" class="accuracy"></div>
       <div class="feedback-settings">
-        <label><input id="showAnswerToggle" type="checkbox" checked> 答后显示正确答案</label>
-        <label><input id="showExplanationToggle" type="checkbox" checked> 答后显示解析</label>
-        <label><input id="autoNextToggle" type="checkbox"> 答对自动下一题</label>
-        <label><input id="shuffleOptionsToggle" type="checkbox"> 选项乱序</label>
+        <label><input id="showAnswerToggle" type="checkbox" checked><span>答后显示正确答案</span></label>
+        <label><input id="showExplanationToggle" type="checkbox" checked><span>答后显示解析</span></label>
+        <label><input id="autoNextToggle" type="checkbox"><span>答对自动下一题</span></label>
+        <label><input id="shuffleOptionsToggle" type="checkbox"><span>选项乱序</span></label>
       </div>
       <article id="quizCard" class="quiz-card"></article>
       <div class="sticky-actions" id="stickyActions">

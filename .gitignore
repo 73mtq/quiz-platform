@@ -7,6 +7,7 @@ node_modules/
 data/*.bak*
 .omc/
 .omo/
+.codegraph/
 dist/
 output/
 .test-tmp/

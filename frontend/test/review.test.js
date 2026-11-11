@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analyzeReview, getQuestionTags } from "./review.js";
+import { analyzeReview, getQuestionTags } from "../src/utils/review.js";
 
 test("analyzeReview summarizes wrong questions and weak categories", () => {
   const course = {

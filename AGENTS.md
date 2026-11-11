@@ -14,14 +14,14 @@ quiz-platform/
 ├── backend/src/                # 后端：server + routes + repositories + services + scripts
 │   ├── routes.js               # 全部 HTTP 端点 + 静态资源服务（ETag/304/gzip）
 │   ├── utils.js                # 题目规范化、答案判定、复习进度、JSON 响应
-│   ├── repositories/           # JSON 文件 / PostgreSQL 双实现 + 仓库测试
+│   ├── repositories/           # JSON 文件 / PostgreSQL 双实现
 │   ├── services/               # AI 识别、学习笔记生成
 │   └── scripts/                # 按用途分组的 CLI 工具 + check-syntax.js（见 scripts/AGENTS.md）
 ├── frontend/
 │   ├── index.html              # 四个 Tab：导入 / 刷题 / 复习 / 题库
 │   └── src/                    # main.js + api/ + state/ + ui/ + utils/ + data/ + styles.css
 ├── data/                       # 题库运行时数据（quiz-data.json + 自动备份）
-├── backend/src/**/*.test.js    # 单元/集成测试（node --test）
+├── backend/test/ + frontend/test/ # 单元/集成测试（node --test）
 ├── docs/MIGRATION.md           # 迁移 / 导入 / 离线产物操作说明
 ├── docs/DEPLOYMENT.md          # 部署 / 发布 / 数据变更 / 排障手册
 ├── dist/                       # 离线 HTML 产物（gitignore）
@@ -100,7 +100,7 @@ quiz-platform/
 - **题目类型自动推断**：`normalizeQuestion` 根据"无选项 + 有答案"自动判定为 `fill-blank`
 - **前端分层**：`api/`（I/O）→ `state/`（model）→ `ui/`（view）→ `utils/`（helpers）；`main.js` 是 controller
 - **备份节流**：练习流程端点传 `skipBackup: true`，只有题库内容变化才写 `data/backups/`
-- **双端一致性测试**：`backend/src/parity.test.js` 保证前端 `answers.js` / `review.js` / `practiceFlow.js` 与后端判定逻辑一致
+- **双端一致性测试**：`backend/test/parity.test.js` 保证前端 `answers.js` / `review.js` / `practiceFlow.js` 与后端判定逻辑一致
 
 ## COMMANDS
 

@@ -187,15 +187,6 @@ function renderPractice(course) {
   }
   animateQuizCard();
 
-  // 有答案反馈时自动滚动到操作按钮（答题后或刷新页面）
-  if (runtime.answerFeedback) {
-    requestAnimationFrame(() => {
-      const actions = document.querySelector(".actions");
-      if (actions) {
-        actions.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    });
-  }
 }
 
 function renderExamStatus(practice) {
@@ -256,6 +247,7 @@ function updatePracticeActions({ practice, mode, question, complete }) {
   const submitted = question && runtime.answerFeedback?.questionId === question.id;
 
   if (submitBtn) {
+    submitBtn.style.display = question ? "" : "none";
     submitBtn.disabled = !question || Boolean(submitted) || Boolean(finishedExam);
     submitBtn.textContent = submitted ? "已提交" : "提交答案";
   }
@@ -278,7 +270,7 @@ function renderRoundStartState(mode) {
   return `
     <section class="round-state is-start">
       <strong>${title}</strong>
-      <p>点击下方“${action}”抽取第一题。本轮开始后会显示进度和剩余题数。</p>
+      <p>点击“${action}”抽取第一题。本轮开始后会显示进度和剩余题数。</p>
     </section>
   `;
 }
@@ -335,7 +327,7 @@ function renderChoicePractice(question) {
   $("#quizCard").innerHTML = `
     <div class="quiz-card-header">
       <h3>${escapeHtml(stem)} ${multiHint} ${wrongTag}</h3>
-      <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏">★</button>
+      <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏" aria-label="收藏本题" aria-pressed="${Boolean(question.bookmarked)}">★</button>
     </div>
     <div class="option-list">
       ${options.map((option) => `
@@ -382,7 +374,7 @@ function renderFillBlankPractice(question) {
   $("#quizCard").innerHTML = `
     <div class="quiz-card-header">
       <h3>${escapeHtml(stem)} ${blankHint} ${wrongTag}</h3>
-      <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏">★</button>
+      <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏" aria-label="收藏本题" aria-pressed="${Boolean(question.bookmarked)}">★</button>
     </div>
     <div class="fill-blank-area">${blanksHtml}</div>
     <div id="answerResult">${renderAnswerFeedback(question)}</div>

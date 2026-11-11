@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
-import { createRouter } from "./routes.js";
-import { buildStudyNotes, stripMemoryTipLabel } from "./services/StudyNoteGenerator.js";
-import { normalizeQuestion } from "./utils.js";
+import { createRouter } from "../src/routes.js";
+import { buildStudyNotes, stripMemoryTipLabel } from "../src/services/StudyNoteGenerator.js";
+import { normalizeQuestion } from "../src/utils.js";
 import {
   applyLocalPracticeConfig,
   examQuestionTotal,

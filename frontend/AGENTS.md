@@ -9,7 +9,7 @@
 ```
 frontend/
 ├── index.html          # 118 行：四个 panel + 工具栏 + 提示条容器
-└── src/
+├── src/
     ├── main.js         # 996 行：controller —— 事件绑定 + 业务函数 + 错误提示
     ├── styles.css      # 1619 行：全部样式（主题变量、动画、提示条）
     ├── api/client.js   # 47 行：单一 request() + 14 个端点包装
@@ -23,6 +23,8 @@ frontend/
         ├── parser.js       # 142 行：parseQuestions —— 粘贴文本的正则式行解析
         ├── practiceFlow.js # 86 行：轮次进度计算与自动下一题判定
         └── review.js       # 193 行：复习分析与复习进度更新
+└── test/
+    └── review.test.js  # 60 行：复习分析单元测试（node --test）
 ```
 
 ## WHERE TO LOOK
@@ -36,7 +38,7 @@ frontend/
 | 改粘贴文本解析 | `utils/parser.js` | 5 个顶部正则：start/option/answer/explanation/noise |
 | 改事件绑定 | `main.js:bind()` | 一处集中；不要散落到其他文件 |
 | 改键盘快捷键 | `main.js:bindKeyboardShortcuts()` | 选项字母按当前题目生成；INPUT/TEXTAREA/SELECT 豁免 |
-| 改答题判定 | `utils/answers.js` / `routes.js:handleApi(/api/practice/answer)` | 两端必须一致；`backend/src/parity.test.js` 会检查 |
+| 改答题判定 | `utils/answers.js` / `routes.js:handleApi(/api/practice/answer)` | 两端必须一致；`backend/test/parity.test.js` 会检查 |
 | 改复习进度更新 | `utils/review.js:applyQuestionReview` | 与后端 `utils.js:updateQuestionReview` 对应 |
 | 改复习关键词/题型规则 | `data/reviewTaxonomy.js` | 纯数据文件，不含逻辑 |
 | 改失败提示 | `main.js:showToast` / `main.js:request` | 所有 `api.*` 调用都应经 `request()` |

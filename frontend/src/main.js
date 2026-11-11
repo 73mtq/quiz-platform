@@ -94,6 +94,8 @@ function bind() {
 
   const importTextBtn = $("#importTextBtn");
   const aiBtn = $("#aiBtn");
+  const imageInput = $("#imageInput");
+  const imagePickText = document.querySelector(".file-pick-text");
   const courseSelect = $("#courseSelect");
   const addCourseBtn = $("#addCourseBtn");
   const deleteCourseBtn = $("#deleteCourseBtn");
@@ -109,6 +111,11 @@ function bind() {
 
   if (importTextBtn) importTextBtn.addEventListener("click", importText);
   if (aiBtn) aiBtn.addEventListener("click", recognizeImage);
+  if (imageInput && imagePickText) {
+    imageInput.addEventListener("change", () => {
+      imagePickText.textContent = imageInput.files?.[0]?.name || "选择图片";
+    });
+  }
   if (courseSelect) courseSelect.addEventListener("change", setActiveCourse);
   if (addCourseBtn) addCourseBtn.addEventListener("click", addCourse);
   if (deleteCourseBtn) deleteCourseBtn.addEventListener("click", deleteCourse);
@@ -960,9 +967,22 @@ function bindKeyboardShortcuts() {
   });
 }
 
+function setupStickyActions() {
+  const bar = document.getElementById("stickyActions");
+  const card = document.getElementById("quizCard");
+  if (!bar || !card || typeof IntersectionObserver !== "function") return;
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      bar.classList.toggle("is-floating", entry.isIntersecting);
+    });
+  }, { threshold: 0.15 });
+  observer.observe(card);
+}
+
 try {
   runtime.state = await api.state();
   bind();
+  setupStickyActions();
 
   // 从服务端获取状态（数据库或 JSON 文件）
   const course = activeCourse();

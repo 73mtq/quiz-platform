@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(currentDir, "../../..");
-const sourceRoots = ["backend/src", "frontend/src"];
+const sourceRoots = ["backend/src", "frontend/src", "backend/test", "frontend/test"];
 
 const files = [];
 for (const root of sourceRoots) collect(path.join(rootDir, root), files);

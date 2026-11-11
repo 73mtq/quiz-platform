@@ -3,8 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test, { after } from "node:test";
 import { fileURLToPath } from "node:url";
-import { JsonQuizRepository } from "./JsonQuizRepository.js";
-import { normalizeQuestion } from "../utils.js";
+import { JsonQuizRepository } from "../../src/repositories/JsonQuizRepository.js";
+import { normalizeQuestion } from "../../src/utils.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, "../../..");

@@ -14,14 +14,17 @@ backend/src/
 ├── routes.js              # 572 行：16 个 API 端点 + 静态资源服务（ETag/304/gzip）
 ├── repositories/
 │   ├── JsonQuizRepository.js      # 文件存储 + mtime 缓存 + 更新队列 + 原子写入 + 备份
-│   ├── JsonQuizRepository.test.js # 并发/损坏文件/缓存/备份测试
 │   └── SqlQuizRepository.js       # PostgreSQL JSONB 单行存储 + 事务更新
 ├── services/
 │   ├── AiRecognitionService.js    # Mimo (Xiaomi) chat/completions，默认 120 秒超时
 │   └── StudyNoteGenerator.js      # 生成解析与速记文本
+└── scripts/               # 见 ./scripts/AGENTS.md
+
+backend/test/              # 测试独立于运行时源码，node --test 自动发现
 ├── parity.test.js         # 前后端判定逻辑一致性测试
 ├── routes.test.js         # 路由集成测试（内存仓库 + 真实 HTTP）
-└── scripts/               # 见 ./scripts/AGENTS.md
+└── repositories/
+    └── JsonQuizRepository.test.js # 并发/损坏文件/缓存/备份测试
 ```
 
 ## WHERE TO LOOK

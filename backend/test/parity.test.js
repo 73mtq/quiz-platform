@@ -5,7 +5,7 @@ import {
   areFillBlankAnswersCorrect,
   getChoiceAnswerTexts as getServerChoiceAnswerTexts,
   updateQuestionReview
-} from "./utils.js";
+} from "../src/utils.js";
 import {
   getChoiceAnswerTexts as getClientChoiceAnswerTexts,
   isChoiceAnswerCorrect,
@@ -13,7 +13,7 @@ import {
 } from "../../frontend/src/utils/answers.js";
 import { applyQuestionReview } from "../../frontend/src/utils/review.js";
 import { stripMemoryTipLabel as stripClientMemoryTipLabel } from "../../frontend/src/utils/practiceFlow.js";
-import { stripMemoryTipLabel as stripServerMemoryTipLabel } from "./services/StudyNoteGenerator.js";
+import { stripMemoryTipLabel as stripServerMemoryTipLabel } from "../src/services/StudyNoteGenerator.js";
 
 const choiceQuestion = {
   type: "choice",
