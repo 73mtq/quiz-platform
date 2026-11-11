@@ -84,9 +84,9 @@ async function handleApi(req, res, url, repository, aiService) {
     if (req.method === "POST" && url.pathname === "/api/courses/active") {
       const lightResponse = url.searchParams.get("light") === "1";
       const state = await repository.update((draft) => {
-        if (draft.courses.some((course) => course.id === body.courseId)) {
-          draft.activeCourseId = body.courseId;
-        }
+        if (!draft.courses.some((course) => course.id === body.courseId)) return false;
+        if (draft.activeCourseId === body.courseId) return false;
+        draft.activeCourseId = body.courseId;
       }, { skipBackup: true });
       await sendJson(req, res, 200, lightResponse ? { activeCourseId: state.activeCourseId } : state);
       return;
@@ -94,7 +94,8 @@ async function handleApi(req, res, url, repository, aiService) {
 
     if (req.method === "POST" && url.pathname === "/api/courses/delete") {
       const state = await repository.update((draft) => {
-        if (draft.courses.length <= 1) return;
+        if (draft.courses.length <= 1) return false;
+        if (!draft.courses.some((course) => course.id === body.courseId)) return false;
         draft.courses = draft.courses.filter((course) => course.id !== body.courseId);
         draft.activeCourseId = draft.courses[0].id;
       });
@@ -133,7 +134,7 @@ async function handleApi(req, res, url, repository, aiService) {
       }
       const state = await repository.update((draft) => {
         const result = repository.updateQuestion(draft, questionId, { stem, options, answer, explanation, memoryTip });
-        if (!result) throw new Error("题目不存在");
+        if (!result) throw httpError(404, "题目不存在");
       });
       await sendJson(req, res, 200, lightResponse ? { questionId } : state);
       return;
@@ -145,13 +146,19 @@ async function handleApi(req, res, url, repository, aiService) {
         await sendJson(req, res, 400, { error: "缺少题目 ID" });
         return;
       }
+      let bookmarked = false;
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
         const question = course.questions.find((q) => q.id === questionId);
-        if (!question) throw new Error("题目不存在");
+        if (!question) throw httpError(404, "题目不存在");
         question.bookmarked = !question.bookmarked;
+        bookmarked = question.bookmarked;
       });
-      await sendJson(req, res, 200, state);
+      const course = repository.getActiveCourse(state);
+      await sendJson(req, res, 200, {
+        courseId: course.id,
+        question: { id: questionId, bookmarked }
+      });
       return;
     }
 
@@ -159,26 +166,31 @@ async function handleApi(req, res, url, repository, aiService) {
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
         const input = practiceInput(body, course.practice);
+        const modeChanged = input.mode !== course.practice.mode;
         applyPracticeConfig(course, input);
 
-        if (!course.practice.remainingIds.length && shouldAutoStartRound(course.practice, input.mode)) {
+        if (modeChanged) {
+          // 切换模式必须重新抽题，不能沿用上一个模式剩下的题号
+          startPracticeRound(course, input, { incrementRound: true });
+        } else if (!course.practice.remainingIds.length && shouldAutoStartRound(course.practice, input.mode)) {
           startPracticeRound(course, input, { incrementRound: true });
         }
         course.practice.currentQuestionId = course.practice.remainingIds.shift() || null;
         course.practice.lastAnswer = null;
       }, { skipBackup: true });
-      await sendJson(req, res, 200, state);
+      await sendJson(req, res, 200, practiceState(repository.getActiveCourse(state)));
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/practice/answer") {
       let answerResult = null;
+      let answeredQuestion = null;
       const state = await repository.update((draft) => {
         const course = repository.getActiveCourse(draft);
         const question = course.questions.find((item) => item.id === body.questionId);
         if (!question) {
           answerResult = { accepted: false, message: "题目不存在" };
-          return;
+          return false;
         }
         if (course.practice.lastAnswer?.questionId === question.id) {
           answerResult = {
@@ -187,7 +199,7 @@ async function handleApi(req, res, url, repository, aiService) {
             ...course.practice.lastAnswer,
             correctAnswer: question.answer
           };
-          return;
+          return false;
         }
 
         let correct;
@@ -219,13 +231,19 @@ async function handleApi(req, res, url, repository, aiService) {
           answeredAt
         };
         recordExamAnswer(course.practice, course.practice.lastAnswer);
+        answeredQuestion = question;
         answerResult = {
           accepted: true,
           ...course.practice.lastAnswer,
           correctAnswer: question.answer
         };
       }, { skipBackup: true });
-      await sendJson(req, res, 200, { state, answerResult });
+      const payload = {
+        ...practiceState(repository.getActiveCourse(state)),
+        answerResult
+      };
+      if (answeredQuestion) payload.question = questionState(answeredQuestion);
+      await sendJson(req, res, 200, payload);
       return;
     }
 
@@ -234,7 +252,7 @@ async function handleApi(req, res, url, repository, aiService) {
         const course = repository.getActiveCourse(draft);
         startPracticeRound(course, practiceInput(body, course.practice));
       }, { skipBackup: true });
-      await sendJson(req, res, 200, state);
+      await sendJson(req, res, 200, practiceState(repository.getActiveCourse(state)));
       return;
     }
 
@@ -244,7 +262,10 @@ async function handleApi(req, res, url, repository, aiService) {
         const course = repository.getActiveCourse(draft);
         summary = finishExam(course, { timedOut: Boolean(body.timedOut) });
       }, { skipBackup: true });
-      await sendJson(req, res, 200, { state, summary });
+      await sendJson(req, res, 200, {
+        ...practiceState(repository.getActiveCourse(state)),
+        summary
+      });
       return;
     }
 
@@ -342,7 +363,7 @@ function startPracticeRound(course, input, { incrementRound = false } = {}) {
   applyPracticeConfig(course, input);
   const practice = course.practice;
   const ids = buildPracticeIds(course, input);
-  practice.remainingIds = ids;
+  practice.remainingIds = [...ids];
   practice.answeredInRound = 0;
   practice.correctInRound = 0;
   practice.currentQuestionId = null;
@@ -354,7 +375,7 @@ function startPracticeRound(course, input, { incrementRound = false } = {}) {
     exam.timeLimitMinutes = input.timeLimitMinutes;
     exam.startedAt = new Date().toISOString();
     exam.finishedAt = "";
-    exam.questionIds = ids;
+    exam.questionIds = [...ids];
     exam.answers = [];
     exam.lastSummary = null;
   }
@@ -561,6 +582,20 @@ function normalizeFingerprintText(value) {
     .replace(/[。．.]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function practiceState(course) {
+  return { courseId: course.id, practice: course.practice };
+}
+
+function questionState(question) {
+  return {
+    id: question.id,
+    wrongCount: question.wrongCount,
+    correctCount: question.correctCount,
+    review: question.review,
+    memoryTip: question.memoryTip
+  };
 }
 
 function shuffle(items) {

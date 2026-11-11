@@ -104,6 +104,8 @@ frontend/
 - **填空题多空**：`question.answer[i]` 与输入框下标一一对应；分隔符 `；;|、` 任意一种
 - **错题重做定义**：服务端 `wrongCount > 0` —— 题库“只看错题”和“错题重做”保持同一口径
 - **乐观更新 + 统计字段同步**：`nextQuestion` / `submitAnswer` 后台 `.then` 只同步统计字段，不覆盖 `currentQuestionId` 和 `remainingIds`
+- **练习补丁合并**：练习端点只返回 `{ courseId, practice }` 补丁；`resetRound` / `finishExam` 整体替换 `practice`，切题与答题只合并统计和 `exam`，避免后台响应覆盖本地刚切到的题目
+- **请求串行化**：练习相关请求统一走 `enqueuePracticeSync`，保证答题、切题、重置按用户操作顺序落到服务端并合并响应
 - **OCR 容错正则链**：`parser.js:normalize` 做全角→半角 + 修 `PMoO|PmoO|PM0|Pwo` → `PMO` + 修 `汽车轮取` → `汽车轮胎`
 - **多答案排序比较**：两边都规范化后排序，再逐位比较；大小写与全角/半角无关
 - **多选题自动判断**：`question.answer.length > 1` → checkbox + multi-hint；否则 radio

@@ -83,12 +83,13 @@ export class JsonQuizRepository {
     await this._writeState(normalized, { skipBackup });
   }
 
-  /** 串行执行 读取 → 修改 → 保存，避免并发覆盖 */
+  /** 串行执行 读取 → 修改 → 保存；mutator 返回 false 表示没有变化，跳过写盘 */
   async update(mutator, { skipBackup = false } = {}) {
     const run = this._writeQueue.then(async () => {
       const state = await this.getState();
-      await mutator(state);
-      const normalized = this.normalizeState(state);
+      const changed = await mutator(state);
+      if (changed === false) return state;
+      const normalized = this.normalizeState(state, { normalizeQuestions: false });
       await this._writeState(normalized, { skipBackup });
       return normalized;
     });
@@ -96,16 +97,18 @@ export class JsonQuizRepository {
     return run;
   }
 
-  normalizeState(state) {
+  normalizeState(state, { normalizeQuestions = true } = {}) {
     let courses = Array.isArray(state.courses) ? state.courses : [];
     if (!courses.length) courses = [createCourse("默认课程")];
 
     courses = courses.map((course) => ({
       id: course.id || createId("course"),
       name: course.name || "未命名课程",
-      questions: (course.questions || course.bank || [])
-        .map(normalizeQuestion)
-        .filter((question) => !validateQuestion(question)),
+      questions: normalizeQuestions
+        ? (course.questions || course.bank || [])
+          .map(normalizeQuestion)
+          .filter((question) => !validateQuestion(question))
+        : (Array.isArray(course.questions) ? course.questions : []),
       practice: normalizePractice(course.practice || course.round?.stats || {}),
       createdAt: course.createdAt || new Date().toISOString()
     }));

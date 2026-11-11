@@ -199,19 +199,24 @@ async function withServer(state, callback) {
 }
 
 test("wrong reset-round includes pending wrong questions only", async () => {
-  const state = await postPractice("/api/practice/reset-round", { mode: "wrong" });
-  const [course] = state.courses;
+  const payload = await postPractice("/api/practice/reset-round", { mode: "wrong" });
 
-  assert.deepEqual([...course.practice.remainingIds].sort(), ["wrong-only", "wrong-then-correct"]);
+  assert.deepEqual([...payload.practice.remainingIds].sort(), ["wrong-only", "wrong-then-correct"]);
 });
 
 test("wrong next prioritizes pending wrong questions", async () => {
-  const state = await postPractice("/api/practice/next", { mode: "wrong" });
-  const [course] = state.courses;
-  const roundIds = [course.practice.currentQuestionId, ...course.practice.remainingIds]
-    .filter(Boolean);
+  const { practice } = await postPractice("/api/practice/next", { mode: "wrong" });
+  const roundIds = [practice.currentQuestionId, ...practice.remainingIds].filter(Boolean);
 
   assert.deepEqual(roundIds, ["wrong-then-correct", "wrong-only"]);
+});
+
+test("practice endpoints return a practice patch instead of the full state", async () => {
+  const payload = await postPractice("/api/practice/next", { mode: "all" });
+
+  assert.equal(payload.courseId, "course-1");
+  assert.ok(payload.practice.currentQuestionId);
+  assert.equal(payload.courses, undefined);
 });
 
 test("wrong answer resets review progress and clears mastered flag", async () => {
@@ -219,8 +224,7 @@ test("wrong answer resets review progress and clears mastered flag", async () =>
     questionId: "mastered-wrong",
     selectedAnswers: ["Beta"]
   });
-  const [course] = payload.state.courses;
-  const question = course.questions.find((item) => item.id === "mastered-wrong");
+  const question = payload.question;
 
   assert.equal(payload.answerResult.correct, false);
   assert.equal(question.wrongCount, 4);
@@ -248,7 +252,7 @@ test("wrong question becomes mastered after two consecutive correct answers", as
     });
     const payload = await response.json();
     assert.equal(response.status, 200, JSON.stringify(payload));
-    const updated = payload.state.courses[0].questions.find((item) => item.id === "wrong-only");
+    const updated = payload.question;
 
     assert.equal(payload.answerResult.correct, true);
     assert.equal(updated.correctCount, 1);
@@ -325,20 +329,19 @@ test("study note generator strips duplicated memory labels and expands short cue
 });
 
 test("exam reset prioritizes pending wrong questions", async () => {
-  const state = await postPractice("/api/practice/reset-round", { mode: "exam", count: 3, timeLimitMinutes: 20 });
-  const [course] = state.courses;
-  const roundIds = course.practice.exam.questionIds;
+  const { practice } = await postPractice("/api/practice/reset-round", { mode: "exam", count: 3, timeLimitMinutes: 20 });
+  const roundIds = practice.exam.questionIds;
 
-  assert.equal(course.practice.mode, "exam");
+  assert.equal(practice.mode, "exam");
   assert.deepEqual(roundIds.slice(0, 2), ["wrong-then-correct", "wrong-only"]);
   assert.equal(roundIds.length, 3);
-  assert.equal(course.practice.exam.timeLimitMinutes, 20);
+  assert.equal(practice.exam.timeLimitMinutes, 20);
 });
 
 test("exam reset creates 30 unique question ids when enough questions exist", async () => {
   await withServer(createLargeExamState(40), async (request) => {
-    const state = await request("/api/practice/reset-round", { mode: "exam", count: 30, timeLimitMinutes: 20 });
-    const questionIds = state.courses[0].practice.exam.questionIds;
+    const payload = await request("/api/practice/reset-round", { mode: "exam", count: 30, timeLimitMinutes: 20 });
+    const questionIds = payload.practice.exam.questionIds;
 
     assert.equal(questionIds.length, 30);
     assert.equal(new Set(questionIds).size, 30);
@@ -352,8 +355,8 @@ test("exam next consumes one server question per call without early exhaustion",
 
     const seen = [];
     for (let i = 0; i < 30; i += 1) {
-      const state = await request("/api/practice/next", { mode: "exam", count: 30, timeLimitMinutes: 20 });
-      const practice = state.courses[0].practice;
+      const payload = await request("/api/practice/next", { mode: "exam", count: 30, timeLimitMinutes: 20 });
+      const practice = payload.practice;
       assert.ok(practice.currentQuestionId, `missing current question at step ${i + 1}`);
       seen.push(practice.currentQuestionId);
       assert.equal(examQuestionTotal(practice, 30), 30);
@@ -362,7 +365,7 @@ test("exam next consumes one server question per call without early exhaustion",
     assert.equal(new Set(seen).size, 30);
 
     const exhausted = await request("/api/practice/next", { mode: "exam", count: 30, timeLimitMinutes: 20 });
-    const practice = exhausted.courses[0].practice;
+    const practice = exhausted.practice;
     assert.equal(practice.currentQuestionId, null);
     assert.equal(practice.remainingIds.length, 0);
     assert.equal(examQuestionTotal(practice, 30), 30);
@@ -453,7 +456,7 @@ test("local practice config stages mode changes without carrying old round state
 test("finish-exam returns summary and exam-wrong uses last wrong ids", async () => {
   await withServer(createState(), async (request) => {
     const reset = await request("/api/practice/reset-round", { mode: "exam", count: 3, timeLimitMinutes: 20 });
-    const roundIds = reset.courses[0].practice.exam.questionIds;
+    const roundIds = reset.practice.exam.questionIds;
 
     await request("/api/practice/answer", {
       questionId: roundIds[0],
@@ -469,17 +472,49 @@ test("finish-exam returns summary and exam-wrong uses last wrong ids", async () 
     assert.deepEqual([...summary.wrongIds].sort(), [...roundIds.slice(1)].sort());
 
     const review = await request("/api/practice/reset-round", { mode: "exam-wrong" });
-    assert.deepEqual([...review.courses[0].practice.remainingIds].sort(), [...summary.wrongIds].sort());
+    assert.deepEqual([...review.practice.remainingIds].sort(), [...summary.wrongIds].sort());
   });
 });
 
 test("bookmark toggles on and off", async () => {
   await withServer(createState(), async (request) => {
     const added = await request("/api/questions/bookmark", { questionId: "unanswered" });
-    assert.equal(findQuestion(added, "unanswered").bookmarked, true);
+    assert.equal(added.question.id, "unanswered");
+    assert.equal(added.question.bookmarked, true);
 
     const removed = await request("/api/questions/bookmark", { questionId: "unanswered" });
-    assert.equal(findQuestion(removed, "unanswered").bookmarked, false);
+    assert.equal(removed.question.bookmarked, false);
+  });
+});
+
+test("switching practice mode starts a fresh round instead of reusing old ids", async () => {
+  const state = createState();
+  state.courses[0].practice.mode = "all";
+  state.courses[0].practice.remainingIds = ["unanswered", "bookmarked"];
+
+  await withServer(state, async (request) => {
+    const wrong = await request("/api/practice/next", { mode: "wrong" });
+    assert.equal(wrong.practice.mode, "wrong");
+    assert.equal(wrong.practice.currentQuestionId, "wrong-then-correct");
+    assert.deepEqual(wrong.practice.remainingIds, ["wrong-only"]);
+
+    const exam = await request("/api/practice/next", { mode: "exam", count: 3, timeLimitMinutes: 20 });
+    assert.equal(exam.practice.mode, "exam");
+    assert.ok(exam.practice.exam.startedAt);
+    assert.equal(exam.practice.exam.questionIds.length, 3);
+    assert.ok(exam.practice.exam.questionIds.includes(exam.practice.currentQuestionId));
+  });
+});
+
+test("duplicate answer is rejected without changing counters", async () => {
+  await withServer(createState(), async (request) => {
+    const first = await request("/api/practice/answer", { questionId: "unanswered", selectedAnswers: ["Alpha"] });
+    assert.equal(first.answerResult.accepted, true);
+
+    const second = await request("/api/practice/answer", { questionId: "unanswered", selectedAnswers: ["Alpha"] });
+    assert.equal(second.answerResult.accepted, false);
+    assert.equal(second.practice.totalAnswered, first.practice.totalAnswered);
+    assert.equal(second.question, undefined);
   });
 });
 
@@ -581,7 +616,3 @@ test("oversized request body returns 413", async () => {
     assert.match(payload.error, /超过大小上限/);
   });
 });
-
-function findQuestion(state, questionId) {
-  return state.courses[0].questions.find((question) => question.id === questionId);
-}

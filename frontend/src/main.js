@@ -14,6 +14,7 @@ let activeCourseSyncError = null;
 let activeCourseSwitchToken = 0;
 let bankSearchRenderTimer = null;
 let toastTimer = null;
+let practiceSync = Promise.resolve();
 
 const sample = `1. 下列哪项活动不是项目（）。
 A. 开发操作系统
@@ -39,6 +40,48 @@ async function request(action, failureMessage) {
     showToast(`${failureMessage}：${error.message || "请求失败"}`);
     return { ok: false, value: null };
   }
+}
+
+function enqueuePracticeSync(task) {
+  const run = practiceSync.then(task, task);
+  practiceSync = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+function applyQuestionPayload(payload) {
+  const course = activeCourse();
+  if (!payload?.courseId || payload.courseId !== course.id || !payload.question) return false;
+  const question = course.questions.find((item) => item.id === payload.question.id);
+  if (!question) return false;
+  Object.assign(question, payload.question);
+  return true;
+}
+
+function applyPracticeStats(payload) {
+  const course = activeCourse();
+  if (!payload?.courseId || payload.courseId !== course.id || !payload.practice) return false;
+  const serverPractice = payload.practice;
+  course.practice.roundNo = serverPractice.roundNo;
+  course.practice.answeredInRound = serverPractice.answeredInRound;
+  course.practice.correctInRound = serverPractice.correctInRound;
+  course.practice.totalAnswered = serverPractice.totalAnswered;
+  course.practice.totalCorrect = serverPractice.totalCorrect;
+  course.practice.exam = serverPractice.exam;
+  applyQuestionPayload(payload);
+  return true;
+}
+
+function applyPracticePayload(payload) {
+  const course = activeCourse();
+  if (!payload?.courseId || payload.courseId !== course.id || !payload.practice) return false;
+  course.practice = payload.practice;
+  applyQuestionPayload(payload);
+  return true;
+}
+
+function findForm(formId) {
+  return Array.from(document.querySelectorAll("[data-form-id]"))
+    .find((element) => element.dataset.formId === formId) || null;
 }
 
 function bind() {
@@ -340,9 +383,12 @@ async function nextQuestion() {
   if (isExamMode(mode)) {
     if (prevId) runtime.questionHistory.push(prevId);
     const count = mode === "exam" ? runtime.examCount : runtime.practiceCount;
-    const result = await request(() => api.nextQuestion(mode, count, runtime.examTimeLimitMinutes), "加载下一题失败");
+    const result = await request(
+      () => enqueuePracticeSync(() => api.nextQuestion(mode, count, runtime.examTimeLimitMinutes)),
+      "加载下一题失败"
+    );
     if (!result.ok) return;
-    runtime.state = result.value;
+    applyPracticePayload(result.value);
     clearCurrentAnswer();
     updatePracticeOnly();
     updatePrevBtn();
@@ -352,9 +398,12 @@ async function nextQuestion() {
 
   if (!course.practice.remainingIds.length) {
     // 题目用完了，需要重新洗牌 —— 必须等服务端返回新的 remainingIds
-    const result = await request(() => api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes), "加载下一题失败");
+    const result = await request(
+      () => enqueuePracticeSync(() => api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes)),
+      "加载下一题失败"
+    );
     if (!result.ok) return;
-    runtime.state = result.value;
+    applyPracticePayload(result.value);
     clearCurrentAnswer();
     updatePracticeOnly();
     updatePrevBtn();
@@ -373,21 +422,14 @@ async function nextQuestion() {
   updatePrevBtn();
 
   // 后台同步服务端（只同步统计数据，不同步 remainingIds）
-  api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes).then((state) => {
-    const serverCourse = state?.courses?.find((c) => c.id === activeCourse()?.id);
-    if (!serverCourse) return;
-    const localCourse = activeCourse();
-    // 只同步统计数据，不同步 remainingIds（前端已管理）
-    localCourse.practice.roundNo = serverCourse.practice.roundNo;
-    localCourse.practice.answeredInRound = serverCourse.practice.answeredInRound;
-    localCourse.practice.correctInRound = serverCourse.practice.correctInRound;
-    localCourse.practice.totalAnswered = serverCourse.practice.totalAnswered;
-    localCourse.practice.totalCorrect = serverCourse.practice.totalCorrect;
-    localCourse.practice.exam = serverCourse.practice.exam;
-    setupExamTimer();
-  }).catch((error) => {
-    showToast(`进度同步失败：${error.message || "请求失败"}`);
-  });
+  enqueuePracticeSync(() => api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes))
+    .then((payload) => {
+      applyPracticeStats(payload);
+      setupExamTimer();
+    })
+    .catch((error) => {
+      showToast(`进度同步失败：${error.message || "请求失败"}`);
+    });
 }
 
 function prevQuestion() {
@@ -473,29 +515,14 @@ async function submitAnswer() {
 
   // 后台同步服务端（不阻塞 UI）
   // 同步统计数据，不覆盖 currentQuestionId，防止答题后跳题
-  api.submitAnswer(question.id, runtime.selectedAnswers).then((result) => {
-    const serverCourse = result.state?.courses?.find((c) => c.id === activeCourse()?.id);
-    if (!serverCourse) return;
-    const localCourse = activeCourse();
-    // 同步所有统计数据（除 currentQuestionId 外）
-    localCourse.practice.totalAnswered = serverCourse.practice.totalAnswered;
-    localCourse.practice.totalCorrect = serverCourse.practice.totalCorrect;
-    localCourse.practice.answeredInRound = serverCourse.practice.answeredInRound;
-    localCourse.practice.correctInRound = serverCourse.practice.correctInRound;
-    localCourse.practice.exam = serverCourse.practice.exam;
-    // 同步题目级别的统计
-    const serverQ = serverCourse.questions.find((q) => q.id === question.id);
-    const localQ = localCourse.questions.find((q) => q.id === question.id);
-    if (serverQ && localQ) {
-      localQ.wrongCount = serverQ.wrongCount;
-      localQ.correctCount = serverQ.correctCount;
-      localQ.review = serverQ.review;
-      localQ.memoryTip = serverQ.memoryTip;
-    }
-    setupExamTimer();
-  }).catch((error) => {
-    showToast(`答题结果同步失败：${error.message || "请求失败"}`);
-  });
+  enqueuePracticeSync(() => api.submitAnswer(question.id, runtime.selectedAnswers))
+    .then((payload) => {
+      applyPracticeStats(payload);
+      setupExamTimer();
+    })
+    .catch((error) => {
+      showToast(`答题结果同步失败：${error.message || "请求失败"}`);
+    });
 
   // 答对自动下一题（基本无延迟，仅留极短时间显示对错反馈）
   if (willAutoNext) {
@@ -508,9 +535,12 @@ async function submitAnswer() {
 async function resetRound() {
   if (!(await ensureActiveCourseSynced())) return;
   stageLocalPracticeRound();
-  const result = await request(() => api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes), "重置本轮失败");
+  const result = await request(
+    () => enqueuePracticeSync(() => api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes)),
+    "重置本轮失败"
+  );
   if (!result.ok) return;
-  runtime.state = result.value;
+  applyPracticePayload(result.value);
   clearCurrentAnswer();
   runtime.questionHistory = [];
   renderApp();
@@ -524,9 +554,9 @@ async function finishExam(timedOut = false) {
   runtime.finishingExam = true;
   try {
     if (!(await ensureActiveCourseSynced())) return;
-    const result = await request(() => api.finishExam(timedOut), "结束模拟失败");
+    const result = await request(() => enqueuePracticeSync(() => api.finishExam(timedOut)), "结束模拟失败");
     if (!result.ok) return;
-    runtime.state = result.value.state;
+    applyPracticePayload(result.value);
     clearCurrentAnswer();
     runtime.questionHistory = [];
     renderApp();
@@ -545,9 +575,12 @@ async function handleExamAction(event) {
     runtime.practiceMode = "exam-wrong";
     localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
     if (!(await ensureActiveCourseSynced())) return;
-    const result = await request(() => api.resetRound("exam-wrong", runtime.practiceCount, runtime.examTimeLimitMinutes), "打开错题复盘失败");
+    const result = await request(
+      () => enqueuePracticeSync(() => api.resetRound("exam-wrong", runtime.practiceCount, runtime.examTimeLimitMinutes)),
+      "打开错题复盘失败"
+    );
     if (!result.ok) return;
-    runtime.state = result.value;
+    applyPracticePayload(result.value);
     clearCurrentAnswer();
     runtime.questionHistory = [];
     renderApp();
@@ -693,7 +726,7 @@ async function handleBookmarkClick(event) {
   if (!(await ensureActiveCourseSynced())) return;
   const result = await request(() => api.bookmarkQuestion(questionId), "收藏状态保存失败");
   if (!result.ok) return;
-  runtime.state = result.value;
+  applyQuestionPayload(result.value);
   renderApp();
 }
 
@@ -759,7 +792,7 @@ document.addEventListener("change", (event) => {
 });
 
 function getFormData(formId) {
-  const form = document.querySelector(`[data-form-id="${formId}"]`);
+  const form = findForm(formId);
   if (!form) return null;
 
   const stem = form.querySelector(".form-stem").value.trim();
@@ -789,7 +822,7 @@ function getFormData(formId) {
 }
 
 function refreshOptionCheckboxes(formId, options) {
-  const form = document.querySelector(`[data-form-id="${formId}"]`);
+  const form = findForm(formId);
   if (!form) return;
 
   const answersDiv = form.querySelector(".form-answers");
@@ -808,7 +841,7 @@ function refreshOptionCheckboxes(formId, options) {
 }
 
 function addOptionRow(formId) {
-  const form = document.querySelector(`[data-form-id="${formId}"]`);
+  const form = findForm(formId);
   if (!form) return;
 
   const optionsDiv = form.querySelector(".form-options");
@@ -1012,5 +1045,5 @@ try {
   renderApp();
   setupExamTimer();
 } catch (err) {
-  document.querySelector(".app").innerHTML = `<div style="padding:40px;color:red;font-size:18px;"><h2>页面加载出错</h2><pre>${err.message}\n${err.stack}</pre><p>请截图发给开发者。</p></div>`;
+  document.querySelector(".app").innerHTML = `<div style="padding:40px;color:red;font-size:18px;"><h2>页面加载出错</h2><pre>${escapeHtml(err.message)}\n${escapeHtml(err.stack)}</pre><p>请截图发给开发者。</p></div>`;
 }

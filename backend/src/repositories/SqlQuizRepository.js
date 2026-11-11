@@ -63,8 +63,12 @@ export class SqlQuizRepository {
       await client.query("BEGIN");
       const result = await client.query("SELECT data FROM quiz_data WHERE id = 1 FOR UPDATE");
       const state = this.normalizeState(result.rows[0]?.data || {});
-      await mutator(state);
-      const normalized = this.normalizeState(state);
+      const changed = await mutator(state);
+      if (changed === false) {
+        await client.query("COMMIT");
+        return state;
+      }
+      const normalized = this.normalizeState(state, { normalizeQuestions: false });
       await client.query(
         "UPDATE quiz_data SET data = $1, updated_at = NOW() WHERE id = 1",
         [JSON.stringify(normalized)]
@@ -83,17 +87,19 @@ export class SqlQuizRepository {
     }
   }
 
-  /** 规范化状态结构 */
-  normalizeState(state) {
+  /** 规范化状态结构；写回时跳过逐题规范化 */
+  normalizeState(state, { normalizeQuestions = true } = {}) {
     let courses = Array.isArray(state.courses) ? state.courses : [];
     if (!courses.length) courses = [this.createCourse("默认课程")];
 
     courses = courses.map((course) => ({
       id: course.id || createId("course"),
       name: course.name || "未命名课程",
-      questions: (course.questions || course.bank || [])
-        .map(normalizeQuestion)
-        .filter((question) => !validateQuestion(question)),
+      questions: normalizeQuestions
+        ? (course.questions || course.bank || [])
+          .map(normalizeQuestion)
+          .filter((question) => !validateQuestion(question))
+        : (Array.isArray(course.questions) ? course.questions : []),
       practice: this.normalizePractice(course.practice || course.round?.stats || {}),
       createdAt: course.createdAt || new Date().toISOString()
     }));

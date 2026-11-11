@@ -91,9 +91,11 @@ backend/test/              # 测试独立于运行时源码，node --test 自动
 ## UNIQUE STYLES
 
 - **API 风格**：所有写操作都是 `POST + JSON body`，包括删除（`/api/courses/delete` 而非 DELETE）
+- **紧凑补丁响应**：练习流程端点返回 `{ courseId, practice }`，答题额外带 `question` 统计，结束模拟带 `summary`；收藏端点返回 `{ courseId, question: { id, bookmarked } }`。不要在这些端点重新返回完整 `state`
 - **响应压缩**：`sendJson` / `sendBody` 自动 gzip；小于 1 KB 不压缩
 - **静态缓存**：ETag 由 size + mtime 生成，`Cache-Control: no-cache` 强制每次校验
-- **状态机**：`practice` 子对象含 `mode` / `count` / `remainingIds` / `currentQuestionId` / `lastAnswer` / `roundNo` / 统计字段 / `exam`
+- **状态机**：`practice` 子对象含 `mode` / `count` / `remainingIds` / `currentQuestionId` / `lastAnswer` / `roundNo` / 统计字段 / `exam`；`/api/practice/next` 收到与当前不同的 `mode` 时重新抽题，不沿用上一轮的题号
+- **写入节流**：`repository.update` 的 `mutator` 返回 `false` 表示状态没有变化，仓库跳过规范化与写盘（重复答题、无效课程切换走这条路径）
 - **错题定义**：`wrongCount > 0`（题库“只看错题”和“错题重做”保持同一口径）
 - **考试模式**：`exam` 与 `exam-wrong` 两种 mode；`practice.exam` 保存题号、作答记录、上次错题与总结
 - **备份节流**：练习流程端点传 `skipBackup: true`；只有题库内容变化才写备份

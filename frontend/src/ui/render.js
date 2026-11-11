@@ -41,7 +41,7 @@ export function renderApp() {
   const course = activeCourse();
   $("#questionCount").textContent = course.questions.length;
   $("#courseSelect").innerHTML = runtime.state.courses.map((item) => (
-    `<option value="${item.id}" ${item.id === runtime.state.activeCourseId ? "selected" : ""}>${escapeHtml(item.name)}（${item.questions.length}题）</option>`
+    `<option value="${escapeHtml(item.id)}" ${item.id === runtime.state.activeCourseId ? "selected" : ""}>${escapeHtml(item.name)}（${item.questions.length}题）</option>`
   )).join("");
   renderPractice(course);
   renderReview(course);
@@ -327,13 +327,13 @@ function renderChoicePractice(question) {
   $("#quizCard").innerHTML = `
     <div class="quiz-card-header">
       <h3>${escapeHtml(stem)} ${multiHint} ${wrongTag}</h3>
-      <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏" aria-label="收藏本题" aria-pressed="${Boolean(question.bookmarked)}">★</button>
+      <button class="bookmark-btn ${bookmarked}" data-bookmark="${escapeHtml(question.id)}" title="收藏" aria-label="收藏本题" aria-pressed="${Boolean(question.bookmarked)}">★</button>
     </div>
     <div class="option-list">
       ${options.map((option) => `
         <label class="option ${optionClass(question, option)}">
           <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback ? "disabled" : ""}>
-          <span><b>${option.key}.</b> ${escapeHtml(option.text)}</span>
+          <span><b>${escapeHtml(option.key)}.</b> ${escapeHtml(option.text)}</span>
         </label>
       `).join("")}
     </div>
@@ -374,7 +374,7 @@ function renderFillBlankPractice(question) {
   $("#quizCard").innerHTML = `
     <div class="quiz-card-header">
       <h3>${escapeHtml(stem)} ${blankHint} ${wrongTag}</h3>
-      <button class="bookmark-btn ${bookmarked}" data-bookmark="${question.id}" title="收藏" aria-label="收藏本题" aria-pressed="${Boolean(question.bookmarked)}">★</button>
+      <button class="bookmark-btn ${bookmarked}" data-bookmark="${escapeHtml(question.id)}" title="收藏" aria-label="收藏本题" aria-pressed="${Boolean(question.bookmarked)}">★</button>
     </div>
     <div class="fill-blank-area">${blanksHtml}</div>
     <div id="answerResult">${renderAnswerFeedback(question)}</div>
@@ -675,7 +675,7 @@ function renderBankList(questions) {
           <h3>${index + 1}. ${escapeHtml(question.stem)} ${typeTag} ${statsTag} ${reviewTag}</h3>
           ${isFillBlank ? "" : `
           <div class="bank-options">
-            ${question.options.map((option) => `<p><b>${option.key}.</b> ${escapeHtml(option.text)}</p>`).join("")}
+            ${question.options.map((option) => `<p><b>${escapeHtml(option.key)}.</b> ${escapeHtml(option.text)}</p>`).join("")}
           </div>
           `}
           <p>答案：${escapeHtml(renderAnswerText(question))}</p>
@@ -684,8 +684,8 @@ function renderBankList(questions) {
           ${stripMemoryTipLabel(question.memoryTip) ? `<p>速记：${escapeHtml(stripMemoryTipLabel(question.memoryTip))}</p>` : ""}
         </div>
         <div class="bank-actions">
-          <button class="ghost" data-edit="${question.id}">编辑</button>
-          <button data-delete="${question.id}">删除</button>
+          <button class="ghost" data-edit="${escapeHtml(question.id)}">编辑</button>
+          <button data-delete="${escapeHtml(question.id)}">删除</button>
         </div>
       </article>
     `;
@@ -703,10 +703,10 @@ function renderQuestionForm(question) {
   const isFillBlank = question?.type === "fill-blank";
 
   return `
-    <article class="bank-item bank-form" data-form-id="${formId}">
+    <article class="bank-item bank-form" data-form-id="${escapeHtml(formId)}">
       <div class="form-body">
         <label>题目类型</label>
-        <select class="form-type" data-form-id="${formId}" ${isEdit ? "disabled" : ""}>
+        <select class="form-type" data-form-id="${escapeHtml(formId)}" ${isEdit ? "disabled" : ""}>
           <option value="choice" ${!isFillBlank ? "selected" : ""}>选择题</option>
           <option value="fill-blank" ${isFillBlank ? "selected" : ""}>填空题</option>
         </select>
@@ -714,7 +714,7 @@ function renderQuestionForm(question) {
         <textarea class="form-stem" placeholder="输入题干...填空题用 ____ 表示空位">${escapeHtml(stem)}</textarea>
         <div class="form-choice-section" ${isFillBlank ? 'style="display:none"' : ""}>
           <label>选项</label>
-          <div class="form-options" data-form-id="${formId}">
+          <div class="form-options" data-form-id="${escapeHtml(formId)}">
             ${options.map((opt, i) => `
               <div class="form-option-row">
                 <input type="text" class="form-option-key" value="${escapeHtml(opt.key)}" maxlength="2" placeholder="键">
@@ -723,9 +723,9 @@ function renderQuestionForm(question) {
               </div>
             `).join("")}
           </div>
-          <button class="ghost form-add-option" data-form-id="${formId}">+ 添加选项</button>
+          <button class="ghost form-add-option" data-form-id="${escapeHtml(formId)}">+ 添加选项</button>
           <label>答案（勾选正确选项）</label>
-          <div class="form-answers" data-form-id="${formId}">
+          <div class="form-answers" data-form-id="${escapeHtml(formId)}">
             ${options.map((opt, index) => `
               <label class="form-answer-check">
                 <input type="checkbox" value="${escapeHtml(opt.text)}" data-option-index="${index}" ${hasChoiceAnswer({ options, answer }, opt.text, answer) ? "checked" : ""}>
@@ -744,8 +744,8 @@ function renderQuestionForm(question) {
         <textarea class="form-memory-tip" placeholder="输入速记口诀或关键词联想...">${escapeHtml(memoryTip)}</textarea>
       </div>
       <div class="form-actions">
-        <button data-save-form="${formId}">${isEdit ? "保存" : "创建"}</button>
-        <button class="ghost" data-cancel-form="${formId}">取消</button>
+        <button data-save-form="${escapeHtml(formId)}">${isEdit ? "保存" : "创建"}</button>
+        <button class="ghost" data-cancel-form="${escapeHtml(formId)}">取消</button>
       </div>
     </article>
   `;

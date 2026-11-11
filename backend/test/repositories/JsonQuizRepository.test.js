@@ -92,3 +92,17 @@ test("练习更新跳过备份，内容更新生成备份", async () => {
   await repository.update((draft) => { draft.courses[0].practice.correctInRound = 5; }, { skipBackup: true });
   assert.deepEqual(await fs.readdir(backupDir), before);
 });
+
+test("返回 false 的更新不写文件也不生成备份", async () => {
+  const { dir, file, repository } = await makeRepository();
+  await repository.update((draft) => { draft.courses[0].name = "保持不变"; }, { skipBackup: true });
+  const before = await fs.stat(file);
+
+  const state = await repository.update(() => false);
+
+  const after = await fs.stat(file);
+  assert.equal(state.courses[0].name, "保持不变");
+  assert.equal(after.mtimeMs, before.mtimeMs);
+  assert.equal(after.size, before.size);
+  await assert.rejects(fs.readdir(path.join(dir, "backups")));
+});
