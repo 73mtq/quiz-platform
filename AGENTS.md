@@ -23,6 +23,7 @@ quiz-platform/
 ├── data/                       # 题库运行时数据（quiz-data.json + 自动备份）
 ├── backend/src/**/*.test.js    # 单元/集成测试（node --test）
 ├── docs/MIGRATION.md           # 迁移 / 导入 / 离线产物操作说明
+├── docs/DEPLOYMENT.md          # 部署 / 发布 / 数据变更 / 排障手册
 ├── dist/                       # 离线 HTML 产物（gitignore）
 ├── .test-tmp/                  # 测试临时目录（gitignore）
 ├── package.json                # 8 个 npm 脚本；ESM；Node 18+
@@ -46,6 +47,7 @@ quiz-platform/
 | 改复习分析 | `frontend/src/utils/review.js` + `frontend/src/data/reviewTaxonomy.js` | 领域关键词与题型规则在 data 文件 |
 | 改 API 客户端 | `frontend/src/api/client.js` | 单一 `request()` 函数，14 个端点 |
 | 加/迁移数据 | `backend/src/scripts/` | 见 `backend/src/scripts/AGENTS.md` |
+| 部署 / 发布 / 排障 | `docs/DEPLOYMENT.md` | GitHub push → Render 自动部署；含数据变更与版本验证 |
 | 改前端全局状态 | `frontend/src/state/appState.js` | `settings` (localStorage) + `runtime` (内存) |
 
 ## CODE MAP

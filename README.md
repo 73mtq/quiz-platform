@@ -77,14 +77,19 @@ DATABASE_URL=你的 PostgreSQL 连接地址（可选）
 
 注意：真正生效的是 `.env` 文件。改完 `.env` 后需要重新运行 `npm start`。
 
-## 部署到 Render.com
+## 部署
 
-1. Fork 本仓库
-2. 在 Render.com 创建 Web Service
+生产环境由 GitHub `master` 分支自动部署到 Render，题库数据存放在 Supabase PostgreSQL。
+
+1. 在 Render 创建 Web Service 并连接本仓库，分支选 `master`
+2. Build Command `npm install`，Start Command `npm start`
 3. 配置环境变量：
-   - `DATABASE_URL`：Supabase 或其他 PostgreSQL 数据库连接地址
+   - `DATABASE_URL`：Supabase 或其他 PostgreSQL 连接地址
    - `MIMO_API_KEY`：AI 识别 API Key（可选）
-4. 部署完成后即可访问
+4. 首次启动自动建表，题库数据按需导入
+
+**推送 `master` 即上线。** 完整的发布流程、数据变更、版本验证与排障步骤见
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
 ## 离线 HTML
 
