@@ -1,7 +1,7 @@
 # 部署与运维手册
 
 **线上地址**：https://quiz-platform-fbxp.onrender.com/
-**适用版本**：master 分支（当前 `3f9ec45`，2026-11-11）
+**适用版本**：master 分支（编写于 2026-11-11）
 
 ---
 
@@ -77,7 +77,7 @@ services:
 
 ```bash
 npm run check      # 全部源码 node --check
-npm test           # node --test，32 个用例
+npm test           # node --test，自动发现 *.test.js
 git add -A && git commit -m "..."
 git push origin master
 ```
