@@ -116,6 +116,7 @@ npm run build:ns-pages  # 生成 docs/index.html，推送后 GitHub Pages 自动
 - 内容源：`content/national-security/course.json`
 - 解析批次：`content/national-security/explanations/batch-*.json`
 - 进度保存在手机浏览器的 localStorage；页面提供“导出进度”和“导入进度”。
+- 页面顶部“导入旧版进度”可以导入旧版 Supabase 中已有的国家安全教育答题记录。
 - `render.yaml` 也保留 Render Static Site 配置，可在 Render 控制台创建镜像站。
 - 旧 Render Web Service 继续使用 Supabase，属于旧版入口；国家安全教育以静态站为准。
 

@@ -243,6 +243,8 @@ Render Static Site（可选镜像）使用 `render.yaml` 里的构建命令，�
 
 **进度**：手机浏览器 localStorage，键为 `national-security-quiz-progress-v1`；页面“导出进度/导入进度”用于换手机和备份。清除浏览器站点数据会丢失进度。
 
+页面顶部“导入旧版进度”读取同目录的 `legacy-progress.json`，把旧版 Supabase 已记录的国家安全教育答题统计导入当前浏览器。该文件由旧 `/api/state` 通过 `export-standalone-progress.js` 生成。
+
 **旧进度迁移**：恢复 Supabase 后导出 `/api/state`，运行：
 
 ```bash
