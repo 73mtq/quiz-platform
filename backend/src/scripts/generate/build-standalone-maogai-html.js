@@ -5,6 +5,13 @@ import { computeBankHash, computeCoreHash, sha256 } from "../../services/Standal
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, "../../../..");
+const pixelDir = path.join(repoRoot, "frontend/assets/pixel");
+const pixelAssets = {};
+for (const name of ["cards", "pencil", "watch", "bulb", "books"]) {
+  const svg = await fs.readFile(path.join(pixelDir, `${name}.svg`), "utf8");
+  pixelAssets[name] = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+const baseStyles = inlinePixelAssets(await fs.readFile(path.join(repoRoot, "frontend/src/styles.css"), "utf8"));
 const cli = parseArgs(process.argv.slice(2));
 const positional = cli._;
 const sourceInput = cli.source || positional[0];
@@ -911,33 +918,47 @@ function renderHtml(data) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#a33b28">
+  <meta name="theme-color" content="#ffffff">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>${escapeHtmlText(data.metadata.title)}</title>
   <style>${styleSheet()}</style>
 </head>
 <body>
   <main class="app">
     <header class="hero">
-      <div>
-        <p class="eyebrow">Offline Quiz</p>
-        <h1>${escapeHtmlText(data.metadata.title)}</h1>
-        <p>单文件 HTML，可直接在手机浏览器打开；题库内嵌只读，答题进度保存在当前浏览器。</p>
+      <div class="hero-copy">
+        <p class="eyebrow">Quiz Platform · 学习终端</p>
+        <h1>${escapeHtmlText(data.metadata.courseName || "课程题库")}<br><span class="hl">随机刷题</span></h1>
+        <p class="hero-desc">${data.metadata.totalQuestions} 道题、逐题解析、错题重练；进度保存在当前手机浏览器。</p>
       </div>
-      <div class="metric">
-        <strong id="questionCount">0</strong>
-        <span>当前章节题数</span>
+      <div class="hero-side">
+        <div class="hero-stickers" aria-hidden="true">
+          <img class="pixel-sticker sticker-cards" src="${pixelAssets.cards}" alt="" width="116" height="116">
+          <img class="pixel-sticker sticker-pencil" src="${pixelAssets.pencil}" alt="" width="78" height="78">
+        </div>
+        <div class="metric">
+          <strong id="questionCount">0</strong>
+          <span>当前课程题数</span>
+        </div>
       </div>
     </header>
 
-    <section class="toolbar">
-      <select id="courseSelect" aria-label="选择章节"></select>
-      <div id="courseMeta" class="toolbar-meta"></div>
-      <button id="exportProgressBtn" class="ghost" type="button">导出进度</button>
-      <button id="importProgressBtn" class="ghost" type="button">导入进度</button>
-      <button id="importLegacyBtn" class="ghost" type="button" style="display:none">导入旧版进度</button>
-      <input id="progressFileInput" type="file" accept="application/json" hidden>
+    <section class="toolbar" aria-label="课程与进度">
+      <label class="field">
+        <span class="field-label">当前课程</span>
+        <select id="courseSelect"></select>
+      </label>
+      <div class="field">
+        <span class="field-label">进度</span>
+        <div id="courseMeta" class="toolbar-meta"></div>
+      </div>
+      <div class="toolbar-actions">
+        <button id="exportProgressBtn" class="ghost" type="button">导出进度</button>
+        <button id="importProgressBtn" class="ghost" type="button">导入进度</button>
+        <button id="importLegacyBtn" class="ghost" type="button" style="display:none">导入旧版进度</button>
+        <input id="progressFileInput" type="file" accept="application/json" hidden>
+      </div>
     </section>
 
     <p id="storageWarning" class="status" style="display:none;color:var(--danger)">当前浏览器禁止写入本地存储，本次进度不会自动保存；请用“导出进度”备份。</p>
@@ -946,7 +967,7 @@ function renderHtml(data) {
       <button class="active" data-tab="practicePanel" type="button">刷题</button>
       <button data-tab="reviewPanel" type="button">复习</button>
       <button data-tab="bankPanel" type="button">题库</button>
-      <button data-tab="dataPanel" type="button">数据</button>
+      <button data-tab="dataPanel" type="button">进度</button>
     </nav>
 
     <section id="practicePanel" class="panel active">
@@ -1003,7 +1024,7 @@ function renderHtml(data) {
     </section>
 
     <section id="dataPanel" class="panel">
-      <h2>迁移校验</h2>
+      <h2>进度与备份</h2>
       <div id="dataSummary" class="data-summary"></div>
     </section>
   </main>
@@ -1012,6 +1033,66 @@ function renderHtml(data) {
   <script>(${clientApp.toString()})();</script>
 </body>
 </html>
+`;
+}
+
+function inlinePixelAssets(css) {
+  return String(css || "").replace(/url\("\.\.\/assets\/pixel\/([a-z-]+)\.svg"\)/g, (match, name) => {
+    const data = pixelAssets[name];
+    return data ? `url("${data}")` : match;
+  });
+}
+
+function standaloneAppendix() {
+  return `
+  /* 静态题库：像素界面补充 */
+  .metric, .toolbar, .tabs, .panel, .quiz-card, .option, .bank-item,
+  .round-boundary, .accuracy > div, .review-metric, .data-block,
+  .correct, .wrong, .fill-blank-input, .bookmark-btn, .review-item,
+  .exam-summary-grid div, .review-summary-grid div { border-radius: 0; }
+  #courseMeta {
+    display: flex;
+    align-items: center;
+    min-height: 42px;
+    padding: 0 12px;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    color: var(--muted);
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .data-summary { display: grid; gap: 12px; }
+  .data-block {
+    padding: 14px;
+    border: 2px solid var(--ink);
+    background: var(--card);
+    box-shadow: var(--shadow-pixel-sm);
+  }
+  .data-block p { margin: 4px 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+  .data-block .ok { color: var(--success); font-weight: 800; }
+  .data-block .danger { color: var(--danger); font-weight: 800; }
+  .course-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .course-pill { padding: 8px 10px; border: 2px solid var(--ink); background: var(--paper); font-size: 12px; }
+  .review-item { padding: 14px; border: 2px solid var(--ink); background: var(--card); box-shadow: var(--shadow-pixel-sm); }
+  .review-item h4 { margin: 0 0 6px; font-size: 14px; line-height: 1.6; }
+  .review-item p { margin: 3px 0; color: var(--muted); font-size: 12px; }
+  #storageWarning {
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border: 2px solid var(--danger);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-weight: 700;
+  }
+  .toolbar-meta { color: var(--muted); }
+  @media (max-width: 760px) {
+    .course-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 430px) {
+    .course-grid { grid-template-columns: 1fr; }
+  }
 `;
 }
 
@@ -1347,6 +1428,8 @@ select, input[type="text"], input[type="search"], input[type="number"] {
   .bookmark-btn { align-self: flex-end; }
   .exam-summary-grid, .review-summary-grid, .course-grid { grid-template-columns: 1fr; }
 }
+${baseStyles}
+${standaloneAppendix()}
 `;
 }
 
