@@ -1045,5 +1045,5 @@ try {
   renderApp();
   setupExamTimer();
 } catch (err) {
-  document.querySelector(".app").innerHTML = `<div style="padding:40px;color:red;font-size:18px;"><h2>页面加载出错</h2><pre>${escapeHtml(err.message)}\n${escapeHtml(err.stack)}</pre><p>请截图发给开发者。</p></div>`;
+  document.querySelector(".app").innerHTML = `<div style="padding:40px;color:red;font-size:18px;"><h2>页面加载出错</h2><pre>${escapeHtml(err.message)}\n${escapeHtml(err.stack)}</pre><p>请截图发给开发者。</p><p><a href="/national-security.html">打开国家安全教育静态题库</a></p></div>`;
 }
