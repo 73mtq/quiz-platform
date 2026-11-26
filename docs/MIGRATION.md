@@ -62,8 +62,10 @@ DATABASE_URL=你的 PostgreSQL 连接地址（可选）
 npm run build:ns-content   # 合并 explanations/batch-*.json
 npm run validate:ns        # 校验 290 道题、解析、引用和占位内容
 npm run build:ns-html      # 生成 dist/national-security-quiz.html
+npm run build:ns-pages     # 生成 docs/index.html，推送后 GitHub Pages 自动更新
 ```
 
+- 线上入口：<https://73mtq.github.io/quiz-platform/>
 - 构建会关闭毛概专用的自动解析生成，保留人工解析。
 - 进度保存在浏览器 localStorage，页面提供“导出进度/导入进度”。
 - 旧服务器进度可以用 `backend/src/scripts/migrate/export-standalone-progress.js` 转成静态页可导入的 JSON。

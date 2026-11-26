@@ -103,18 +103,20 @@ npm run build:maogai-html
 
 ## 国家安全教育静态题库（手机）
 
-国家安全教育 290 道题打包成单文件 HTML，部署到 Render Static Site，手机打开链接即可刷题，不依赖数据库。
+国家安全教育 290 道题打包成单文件 HTML，部署到 GitHub Pages，手机打开 <https://73mtq.github.io/quiz-platform/> 即可刷题，不依赖数据库。
 
 ```powershell
 npm run validate:ns     # 校验 290 道题的解析、答案和引用
 npm run build:ns-html   # 生成 dist/national-security-quiz.html
+npm run build:ns-pages  # 生成 docs/index.html，推送后 GitHub Pages 自动更新
 ```
 
+- 当前线上入口：<https://73mtq.github.io/quiz-platform/>
 - 内容源：`content/national-security/course.json`
 - 解析批次：`content/national-security/explanations/batch-*.json`
 - 进度保存在手机浏览器的 localStorage；页面提供“导出进度”和“导入进度”。
-- 静态站点由 `render.yaml` 的 `quiz-platform-static` 服务构建，发布目录 `public/`。
-- 旧 Render Web Service 继续使用 Supabase，属于旧版入口；国家安全教育以静态站点为准。
+- `render.yaml` 也保留 Render Static Site 配置，可在 Render 控制台创建镜像站。
+- 旧 Render Web Service 继续使用 Supabase，属于旧版入口；国家安全教育以静态站为准。
 
 ## 键盘快捷键
 

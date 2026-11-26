@@ -1,7 +1,7 @@
 # 部署与运维手册
 
 **旧动态地址**：https://quiz-platform-fbxp.onrender.com/（Supabase，数据库暂停时题库接口返回 500）
-**国家安全教育静态地址**：以 Render 控制台的 quiz-platform-static 服务地址为准（无数据库，手机浏览器直接刷题）
+**国家安全教育静态地址**：https://73mtq.github.io/quiz-platform/（GitHub Pages，无数据库，手机浏览器直接刷题）
 **适用版本**：master 分支（编写于 2026-11-26）
 
 ---
@@ -20,7 +20,7 @@ Render Web Service (quiz-platform)  ── 代码 ──▶ GitHub  73mtq/quiz-p
 | 环境 | 代码来源 | 存储 | 启动方式 |
 |------|----------|------|----------|
 | 生产（旧动态版） | GitHub master 推送后自动部署 | Supabase PostgreSQL | `npm start` |
-| 国家安全教育静态站 | GitHub master 推送后自动部署 | 题库内嵌 HTML，无数据库 | Render Static Site |
+| 国家安全教育静态站 | GitHub master 推送后自动部署 | 题库内嵌 HTML，无数据库 | GitHub Pages（render.yaml 保留 Render Static Site 镜像配置） |
 | 本地 | 工作区 | `data/quiz-data.json` | `npm start` |
 
 **存储如何选择**：`backend/src/config.js` 的 `useDatabase` getter 返回 `Boolean(DATABASE_URL)`。
@@ -213,21 +213,27 @@ curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://<host>/api/sta
 
 ## 10. 国家安全教育静态站（手机）
 
-**入口**：Render Static Site `quiz-platform-static`，地址以控制台为准。页面是单个 HTML，不请求 `/api/*`，不连接数据库。
+**入口**：GitHub Pages <https://73mtq.github.io/quiz-platform/>。页面是单个 HTML，不请求 `/api/*`，不连接数据库。`render.yaml` 同时保留 `quiz-platform-static` 的 Render Static Site 配置，可在 Render 控制台创建镜像站。
 
-**构建**：`render.yaml` 的静态服务执行两步：
+**构建**：
+
+GitHub Pages 使用：
 
 ```bash
-node backend/src/scripts/generate/validate-national-security-content.js
-node backend/src/scripts/generate/build-standalone-maogai-html.js   --source content/national-security/course.json   --course "国家安全教育"   --output public/index.html   --title "国家安全教育题库"   --storage-key "national-security-quiz-progress-v1"   --no-auto-notes   --require-explanations
+npm run build:ns-pages
 ```
+
+该命令会校验内容、生成 `dist/national-security-quiz.html`，并复制到 `docs/index.html`。推送 `origin/master` 后 GitHub Pages 自动构建。
+
+Render Static Site（可选镜像）使用 `render.yaml` 里的构建命令，输出目录为 `public/`。
 
 **内容更新**：
 
 1. 修改 `content/national-security/explanations/batch-*.json`。
 2. `npm run build:ns-content` 合并成 `content/national-security/course.json`。
 3. `npm run validate:ns` 校验 290 道题。
-4. 推送 `origin/master`，Render 自动构建静态站。
+4. `npm run build:ns-pages` 更新 `docs/index.html`。
+5. 推送 `origin/master`，GitHub Pages 自动构建；Render 静态服务若已创建也会自动部署。
 
 **进度**：手机浏览器 localStorage，键为 `national-security-quiz-progress-v1`；页面“导出进度/导入进度”用于换手机和备份。清除浏览器站点数据会丢失进度。
 
