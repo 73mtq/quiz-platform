@@ -1,35 +1,72 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { computeBankHash, computeCoreHash, sha256 } from "../../services/StandaloneBankHash.js";
 
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentDir, "../../../..");
-const outputFile = process.argv[3] ? path.resolve(process.argv[3]) : path.join(repoRoot, "dist/maogai-quiz.html");
+const cli = parseArgs(process.argv.slice(2));
+const positional = cli._;
+const sourceInput = cli.source || positional[0];
+const outputInput = cli.output || positional[1];
+const progressInput = cli.progress || positional[2];
+const outputFile = outputInput ? path.resolve(outputInput) : path.join(repoRoot, "dist/maogai-quiz.html");
 const defaultProgressFile = path.join(repoRoot, "data", "maogai-progress.json");
-const progressFile = process.argv[4] ? path.resolve(process.argv[4]) : defaultProgressFile;
+const progressFile = progressInput ? path.resolve(progressInput) : defaultProgressFile;
+const courseName = String(cli.course || "").trim();
+const pageTitle = String(cli.title || "").trim();
+const autoNotes = !cli.noAutoNotes;
+const requireExplanations = Boolean(cli.requireExplanations);
+const storageKey = String(cli.storageKey || "").trim()
+  || (courseName ? `quiz-html-progress-${encodeURIComponent(courseName)}-v1` : "maogai-quiz-html-progress-maogai-only-v1");
+const settingsKey = String(cli.settingsKey || "").trim()
+  || (courseName ? `quiz-html-settings-${encodeURIComponent(courseName)}-v1` : "maogai-quiz-html-settings-v1");
 
-const selectedSource = await selectMaoGaiSource(process.argv[2] ? [path.resolve(process.argv[2])] : await discoverSourceCandidates());
+const sourceFiles = sourceInput ? [path.resolve(sourceInput)] : await discoverSourceCandidates();
+const selectedSource = courseName
+  ? await selectCourseByName(courseName, sourceFiles)
+  : await selectMaoGaiSource(sourceFiles);
 const { sourceFile, sourceRaw, courses, extraction } = selectedSource;
-const sourceQuestionCoreSha256 = sha256(JSON.stringify(courses.map(courseCore)));
-const generatedNotes = applyGeneratedStudyNotes(courses);
+const sourceQuestionCoreSha256 = computeCoreHash(courses);
+const generatedNotes = autoNotes
+  ? applyGeneratedStudyNotes(courses)
+  : { scanned: 0, updated: 0, explanationAdded: 0, memoryTipAdded: 0, skipped: true };
 const sourceStat = await fs.stat(sourceFile);
 
 if (!courses.length) {
-  throw new Error("没有找到可迁移的毛概课程。");
+  throw new Error(courseName ? `没有找到课程“${courseName}”。` : "没有找到可迁移的毛概课程。");
 }
 
 const activeCourseId = courses[0].id;
+const resolvedTitle = pageTitle || (courseName ? `${courseName}题库离线刷题` : "毛概题库离线刷题");
+const explanationCount = courses.reduce((sum, course) => sum + (course.questions || []).filter((question) => String(question.explanation || "").trim()).length, 0);
+const memoryTipCount = courses.reduce((sum, course) => sum + (course.questions || []).filter((question) => String(question.memoryTip || "").trim()).length, 0);
+
+if (requireExplanations) {
+  const missing = courses.flatMap((course) => (course.questions || [])
+    .filter((question) => !String(question.explanation || "").trim())
+    .map((question) => `${course.name}：${question.id}`));
+  if (missing.length) {
+    throw new Error(`以下题目缺少解析，构建终止：\n${missing.slice(0, 30).join("\n")}${missing.length > 30 ? `\n……共 ${missing.length} 道` : ""}`);
+  }
+}
 
 const payload = {
   metadata: {
-    title: "毛概题库离线刷题",
+    title: resolvedTitle,
+    courseName,
+    storageKey,
+    settingsKey,
+    progressFileName: resolvedTitle.replace(/题库离线刷题$/, "题库") + "刷题进度",
+    autoNotes,
+    explanationCount,
+    memoryTipCount,
     generatedAt: new Date().toISOString(),
     sourceFile: path.relative(repoRoot, sourceFile).replace(/\\/g, "/"),
     sourceMtime: sourceStat.mtime.toISOString(),
     sourceSha256: sha256(sourceRaw),
     sourceQuestionCoreSha256,
-    questionBankSha256: sha256(JSON.stringify(courses.map(({ id, name, questions }) => ({ id, name, questions })))),
+    questionBankSha256: computeBankHash(courses),
     totalCourses: courses.length,
     totalQuestions: courses.reduce((sum, course) => sum + course.questions.length, 0),
     extraction,
@@ -70,6 +107,10 @@ console.log(`Question bank SHA256: ${payload.metadata.questionBankSha256}`);
 console.log(`Extraction: ${payload.metadata.extraction.method}`);
 console.log(`Generated explanations: ${payload.metadata.generatedNotes.explanationAdded}`);
 console.log(`Generated memory tips: ${payload.metadata.generatedNotes.memoryTipAdded}`);
+console.log(`Explanations: ${payload.metadata.explanationCount}`);
+console.log(`Memory tips: ${payload.metadata.memoryTipCount}`);
+console.log(`Title: ${payload.metadata.title}`);
+console.log(`Storage key: ${payload.metadata.storageKey}`);
 console.log(`Verified: ${verifyResult}`);
 
 async function discoverSourceCandidates() {
@@ -117,6 +158,73 @@ async function selectMaoGaiSource(files) {
 
   if (!candidates.length) {
     throw new Error("没有在 data/ 或 data/backups/ 中找到可识别的毛概题库。");
+  }
+
+  return candidates.sort((a, b) => b.score - a.score)[0];
+}
+
+function parseArgs(args) {
+  const result = { _: [] };
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg.startsWith("--")) {
+      result._.push(arg);
+      continue;
+    }
+    const equals = arg.indexOf("=");
+    if (equals >= 0) {
+      result[camelKey(arg.slice(2, equals))] = arg.slice(equals + 1);
+      continue;
+    }
+    const key = camelKey(arg.slice(2));
+    const next = args[index + 1];
+    if (next && !next.startsWith("--")) {
+      result[key] = next;
+      index += 1;
+    } else {
+      result[key] = true;
+    }
+  }
+  return result;
+}
+
+function camelKey(key) {
+  return String(key || "").replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+async function selectCourseByName(name, files) {
+  const candidates = [];
+  for (const file of files) {
+    const raw = await fs.readFile(file, "utf8").catch(() => "");
+    if (!raw.trim()) continue;
+    try {
+      const state = JSON.parse(raw.replace(/^\uFEFF/, ""));
+      const matches = (state.courses || []).filter((course) => course.name === name && Array.isArray(course.questions) && course.questions.length > 0);
+      if (!matches.length) continue;
+      const courses = matches.map((course, index) => ({
+        id: course.id || `course-${encodeURIComponent(name)}-${index + 1}`,
+        name: course.name || name,
+        questions: course.questions,
+        practice: emptyPractice(),
+        createdAt: course.createdAt || ""
+      }));
+      candidates.push({
+        sourceFile: file,
+        sourceRaw: raw.replace(/^\uFEFF/, ""),
+        courses,
+        extraction: {
+          method: "course-name",
+          sourceCourseNames: matches.map((course) => course.name)
+        },
+        score: courses.reduce((sum, course) => sum + course.questions.length, 0)
+      });
+    } catch {
+      // Ignore malformed candidates.
+    }
+  }
+
+  if (!candidates.length) {
+    throw new Error(`没有在题库文件中找到课程“${name}”。`);
   }
 
   return candidates.sort((a, b) => b.score - a.score)[0];
@@ -768,24 +876,6 @@ function isJudgeQuestion(question) {
   return optionTexts.some((item) => positive.has(item)) && optionTexts.some((item) => negative.has(item));
 }
 
-function courseCore(course) {
-  return {
-    id: course.id,
-    name: course.name,
-    questions: (course.questions || []).map(questionCore)
-  };
-}
-
-function questionCore(question) {
-  return {
-    id: question.id,
-    type: question.type,
-    stem: question.stem,
-    options: question.options,
-    answer: question.answer
-  };
-}
-
 async function verifyOutput(file, expectedPayload) {
   const html = await fs.readFile(file, "utf8");
   const match = html.match(/<script type="application\/json" id="quiz-data">([\s\S]*?)<\/script>/);
@@ -809,7 +899,7 @@ async function verifyOutput(file, expectedPayload) {
     throw new Error(`生成文件回读校验失败：\n${validation.errors.join("\n")}`);
   }
 
-  return "题干、选项、答案与源题库逐题一致；解析和速记已生成";
+  return "题干、选项、答案与源题库逐题一致；解析和速记已内嵌";
 }
 
 function renderHtml(data) {
@@ -822,15 +912,15 @@ function renderHtml(data) {
   <meta name="theme-color" content="#a33b28">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>毛概题库离线刷题</title>
+  <title>${escapeHtmlText(data.metadata.title)}</title>
   <style>${styleSheet()}</style>
 </head>
 <body>
   <main class="app">
     <header class="hero">
       <div>
-        <p class="eyebrow">Mao Gai Quiz · Offline</p>
-        <h1>毛概题库离线刷题</h1>
+        <p class="eyebrow">Offline Quiz</p>
+        <h1>${escapeHtmlText(data.metadata.title)}</h1>
         <p>单文件 HTML，可直接在手机浏览器打开；题库内嵌只读，答题进度保存在当前浏览器。</p>
       </div>
       <div class="metric">
@@ -846,6 +936,8 @@ function renderHtml(data) {
       <button id="importProgressBtn" class="ghost" type="button">导入进度</button>
       <input id="progressFileInput" type="file" accept="application/json" hidden>
     </section>
+
+    <p id="storageWarning" class="status" style="display:none;color:var(--danger)">当前浏览器禁止写入本地存储，本次进度不会自动保存；请用“导出进度”备份。</p>
 
     <nav class="tabs" aria-label="页面">
       <button class="active" data-tab="practicePanel" type="button">刷题</button>
@@ -1172,6 +1264,7 @@ select, input[type="text"], input[type="search"], input[type="number"] {
   border-radius: var(--radius-sm);
   font-size: 13px;
   line-height: 1.8;
+  white-space: pre-line;
 }
 .correct { border: 1px solid rgba(47,122,70,.22); background: var(--success-soft); }
 .correct strong { color: var(--success); }
@@ -1209,6 +1302,7 @@ select, input[type="text"], input[type="search"], input[type="number"] {
 .review-item { padding: 12px; }
 .review-item h4 { margin: 0 0 5px; font-size: 14px; line-height: 1.6; }
 .review-item p, .bank-item p, .data-block p { margin: 3px 0; color: var(--muted); font-size: 12px; }
+.bank-item p { white-space: pre-line; }
 .bank-toolbar input { flex: 1; min-width: 170px; }
 .bank-list { display: grid; gap: 8px; }
 .bank-item { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 13px; }
@@ -1256,11 +1350,11 @@ select, input[type="text"], input[type="search"], input[type="number"] {
 function clientApp() {
   "use strict";
 
-  const STORAGE_KEY = "maogai-quiz-html-progress-maogai-only-v1";
-  const SETTINGS_KEY = "maogai-quiz-html-settings-v1";
+  const embedded = JSON.parse(document.getElementById("quiz-data").textContent);
+  const STORAGE_KEY = embedded.metadata.storageKey || "maogai-quiz-html-progress-maogai-only-v1";
+  const SETTINGS_KEY = embedded.metadata.settingsKey || "maogai-quiz-html-settings-v1";
   const BANK_RENDER_LIMIT = 120;
   const EXAM_MODES = new Set(["exam", "exam-wrong"]);
-  const embedded = JSON.parse(document.getElementById("quiz-data").textContent);
   const baseState = {
     activeCourseId: embedded.activeCourseId,
     courses: embedded.courses
@@ -1363,7 +1457,7 @@ function clientApp() {
   }
 
   function saveSettings() {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+    writeStorage(SETTINGS_KEY, JSON.stringify({
       showAnswer: settings.showAnswer,
       showExplanation: settings.showExplanation,
       autoNext: settings.autoNext,
@@ -1382,6 +1476,24 @@ function clientApp() {
     } catch {
       return fallback;
     }
+  }
+
+  let storageWarningShown = false;
+  function writeStorage(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch {
+      showStorageWarning();
+      return false;
+    }
+  }
+
+  function showStorageWarning() {
+    if (storageWarningShown) return;
+    storageWarningShown = true;
+    const warning = document.querySelector("#storageWarning");
+    if (warning) warning.style.display = "";
   }
 
   function hydrateState() {
@@ -1414,7 +1526,7 @@ function clientApp() {
     const local = readJson(STORAGE_KEY, null);
     const hasEmbedded = embeddedProgressSignature && hasProgressData(embedded.initialProgress);
     if (local && typeof local === "object") {
-      if (hasProgressData(local) && !isCompatibleProgressHash(local.bankHash)) {
+      if (hasProgressData(local) && !isCompatibleProgressHash(local.bankHash, local.coreHash)) {
         activeProgressSignature = hasEmbedded ? embeddedProgressSignature : "";
         return hasEmbedded ? withProgressSignature(embedded.initialProgress) : {};
       }
@@ -1455,16 +1567,17 @@ function clientApp() {
     };
   }
 
-  function isCompatibleProgressHash(hash) {
-    if (!hash) return true;
+  function isCompatibleProgressHash(hash, coreHash = "") {
+    if (!hash && !coreHash) return true;
     const allowed = new Set([
       embedded.metadata.questionBankSha256,
+      embedded.metadata.sourceQuestionCoreSha256,
       ...(embedded.metadata.compatibleProgressHashes || [])
     ].filter(Boolean));
-    return allowed.has(hash);
+    return Boolean((hash && allowed.has(hash)) || (coreHash && allowed.has(coreHash)));
   }
 
-  function persistState() {
+  function buildProgressPayload() {
     const practices = {};
     const questionProgress = {};
     for (const course of runtime.state.courses) {
@@ -1487,15 +1600,20 @@ function clientApp() {
         }
       }
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    return {
       version: 1,
       bankHash: embedded.metadata.questionBankSha256,
+      coreHash: embedded.metadata.sourceQuestionCoreSha256 || "",
       savedAt: new Date().toISOString(),
       activeCourseId: runtime.state.activeCourseId,
       practices,
       questionProgress,
       embeddedProgressSignature: activeProgressSignature || ""
-    }));
+    };
+  }
+
+  function persistState() {
+    writeStorage(STORAGE_KEY, JSON.stringify(buildProgressPayload()));
   }
 
   function normalizeReviewState(review = {}) {
@@ -2341,8 +2459,9 @@ function clientApp() {
     $("#dataSummary").innerHTML = `
       <div class="data-block">
         <p><span class="ok">已完成迁移校验</span>：${embedded.metadata.totalCourses} 个章节，${embedded.metadata.totalQuestions} 道题，题干、选项、答案与源 JSON 逐题一致。</p>
-        <p>本 HTML 已生成分析型解析和速记：解析 ${embedded.metadata.generatedNotes?.explanationAdded || 0} 条，速记 ${embedded.metadata.generatedNotes?.memoryTipAdded || 0} 条。</p>
-        <p>当前载入：${totalQuestions} 道题；本机已保存进度题目：${progressCount} 道。</p>
+        <p>本 HTML 已写入逐题解析：${embedded.metadata.explanationCount || 0} 条；速记：${embedded.metadata.memoryTipCount || 0} 条。</p>
+        <p>当前载入：${totalQuestions} 道题；当前浏览器已保存进度：${progressCount} 道。</p>
+        <p>进度在每次答题后自动保存。换手机时先用“导出进度”备份，再在新手机“导入进度”。</p>
       </div>
       <div class="data-block">
         <p>源文件：${escapeHtml(embedded.metadata.sourceFile)}</p>
@@ -2557,15 +2676,19 @@ function clientApp() {
 
   function resetProgress() {
     if (!confirm("确认清空当前浏览器里的答题进度、错题和收藏？题库文件本身不会改变。")) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    if (!writeStorage(STORAGE_KEY, JSON.stringify({
       version: 1,
       bankHash: embedded.metadata.questionBankSha256,
+      coreHash: embedded.metadata.sourceQuestionCoreSha256 || "",
       savedAt: new Date().toISOString(),
       activeCourseId: embedded.activeCourseId,
       practices: {},
       questionProgress: {},
       embeddedProgressSignature
-    }));
+    }))) {
+      alert("浏览器禁止写入本地存储，无法重置进度。");
+      return;
+    }
     activeProgressSignature = embeddedProgressSignature;
     runtime.state = hydrateState();
     clearCurrentAnswer();
@@ -2576,15 +2699,15 @@ function clientApp() {
   }
 
   function exportProgress() {
-    persistState();
-    const payload = readJson(STORAGE_KEY, {});
+    const payload = buildProgressPayload();
     payload.exportedAt = new Date().toISOString();
     payload.bankHash = embedded.metadata.questionBankSha256;
+    payload.coreHash = embedded.metadata.sourceQuestionCoreSha256 || "";
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `毛概刷题进度-${new Date().toISOString().slice(0, 10)}.json`;
+    link.download = `${embedded.metadata.progressFileName || "刷题进度"}-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -2594,11 +2717,17 @@ function clientApp() {
     if (!file) return;
     try {
       const payload = JSON.parse(await file.text());
-      if (!isCompatibleProgressHash(payload.bankHash)) {
+      if (!isCompatibleProgressHash(payload.bankHash, payload.coreHash)) {
         if (!confirm("进度文件来自不同题库版本，仍要导入吗？")) return;
       }
+      const importedIds = Object.keys(payload.questionProgress || {});
+      const knownIds = new Set(runtime.state.courses.flatMap((course) => (course.questions || []).map((question) => question.id)));
+      const appliedCount = importedIds.filter((id) => knownIds.has(id)).length;
       payload.embeddedProgressSignature = embeddedProgressSignature;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      if (!writeStorage(STORAGE_KEY, JSON.stringify(payload))) {
+        alert("浏览器禁止写入本地存储，进度无法导入。请换用普通浏览器窗口后重试。");
+        return;
+      }
       activeProgressSignature = embeddedProgressSignature;
       runtime.state = hydrateState();
       clearCurrentAnswer();
@@ -2606,7 +2735,8 @@ function clientApp() {
       renderApp();
       updatePrevBtn();
       setupExamTimer();
-      alert("进度已导入。");
+      const skipped = importedIds.length - appliedCount;
+      alert(`进度已导入：${appliedCount} 道题的统计已恢复${skipped > 0 ? `，${skipped} 道题因题库版本不同被跳过` : ""}。`);
     } catch (error) {
       alert(`导入失败：${error.message}`);
     } finally {
@@ -2668,8 +2798,13 @@ function clientApp() {
   setupExamTimer();
 }
 
-function sha256(value) {
-  return crypto.createHash("sha256").update(value).digest("hex");
+function escapeHtmlText(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function normalizeChoiceText(value) {

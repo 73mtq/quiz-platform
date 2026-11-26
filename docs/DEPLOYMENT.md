@@ -1,7 +1,8 @@
 # 部署与运维手册
 
-**线上地址**：https://quiz-platform-fbxp.onrender.com/
-**适用版本**：master 分支（编写于 2026-11-11）
+**旧动态地址**：https://quiz-platform-fbxp.onrender.com/（Supabase，数据库暂停时题库接口返回 500）
+**国家安全教育静态地址**：以 Render 控制台的 quiz-platform-static 服务地址为准（无数据库，手机浏览器直接刷题）
+**适用版本**：master 分支（编写于 2026-11-26）
 
 ---
 
@@ -18,7 +19,8 @@ Render Web Service (quiz-platform)  ── 代码 ──▶ GitHub  73mtq/quiz-p
 
 | 环境 | 代码来源 | 存储 | 启动方式 |
 |------|----------|------|----------|
-| 生产 | GitHub master 推送后自动部署 | Supabase PostgreSQL | `npm start` |
+| 生产（旧动态版） | GitHub master 推送后自动部署 | Supabase PostgreSQL | `npm start` |
+| 国家安全教育静态站 | GitHub master 推送后自动部署 | 题库内嵌 HTML，无数据库 | Render Static Site |
 | 本地 | 工作区 | `data/quiz-data.json` | `npm start` |
 
 **存储如何选择**：`backend/src/config.js` 的 `useDatabase` getter 返回 `Boolean(DATABASE_URL)`。
@@ -181,7 +183,7 @@ curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://<host>/api/sta
 | 现象 | 原因 | 处理 |
 |------|------|------|
 | 首页超时或 502 | 免费实例休眠冷启动 | 等 60 秒重试，不要急着重部署 |
-| `/api/state` 500，错误含 `tenant/user postgres.xxx not found` | Supabase 项目被暂停或删除 | 到 Supabase Dashboard 恢复项目，**恢复后无需重新部署** |
+| `/api/state` 500，错误含 `tenant/user postgres.xxx not found` | 旧动态版的 Supabase 项目被暂停或删除 | 到 Supabase Dashboard 恢复项目；国家安全教育改用静态站，不依赖该接口 |
 | 构建失败 | 依赖或语法问题 | 本地先跑 `npm run check` + `npm test`，再看 Render Logs |
 | 页面能开但题库为空 | 新库首次启动只有空 state | 按 5.2 或 5.4 灌数据 |
 | 写入返回 413 | 单请求体上限 20 MB | 分批导入 |
@@ -206,3 +208,35 @@ curl -s -o /dev/null -w '%{http_code} %{size_download}\n' https://<host>/api/sta
   不是多租户设计，不能水平扩多实例共写。
 - 数据库只存一个 `data` 大字段，整库读写，题库变大会线性变慢。
 - 备份只在本地 JSON 模式生效（`data/backups/` 保留 80 份）；数据库模式依赖 Supabase 自身备份。
+
+---
+
+## 10. 国家安全教育静态站（手机）
+
+**入口**：Render Static Site `quiz-platform-static`，地址以控制台为准。页面是单个 HTML，不请求 `/api/*`，不连接数据库。
+
+**构建**：`render.yaml` 的静态服务执行两步：
+
+```bash
+node backend/src/scripts/generate/validate-national-security-content.js
+node backend/src/scripts/generate/build-standalone-maogai-html.js   --source content/national-security/course.json   --course "国家安全教育"   --output public/index.html   --title "国家安全教育题库"   --storage-key "national-security-quiz-progress-v1"   --no-auto-notes   --require-explanations
+```
+
+**内容更新**：
+
+1. 修改 `content/national-security/explanations/batch-*.json`。
+2. `npm run build:ns-content` 合并成 `content/national-security/course.json`。
+3. `npm run validate:ns` 校验 290 道题。
+4. 推送 `origin/master`，Render 自动构建静态站。
+
+**进度**：手机浏览器 localStorage，键为 `national-security-quiz-progress-v1`；页面“导出进度/导入进度”用于换手机和备份。清除浏览器站点数据会丢失进度。
+
+**旧进度迁移**：恢复 Supabase 后导出 `/api/state`，运行：
+
+```bash
+node backend/src/scripts/migrate/export-standalone-progress.js   --state <state.json>   --content content/national-security/course.json   --course "国家安全教育"   --output <progress.json>
+```
+
+然后在静态页点“导入进度”。
+
+**旧动态服务**：继续服务其他课程；数据库暂停时旧链接会报错。静态站验证通过后，可在 Render 控制台删除旧 Web Service，或保留为旧版入口。

@@ -14,7 +14,10 @@
     "migrate:to-db": "node backend/src/scripts/migrate/migrate-to-db.js",
     "import:txt": "node backend/src/scripts/import/import-txt-files.js",
     "generate:study-notes": "node backend/src/scripts/generate/generate-study-notes.js",
-    "build:maogai-html": "node backend/src/scripts/generate/build-standalone-maogai-html.js"
+    "build:maogai-html": "node backend/src/scripts/generate/build-standalone-maogai-html.js",
+    "build:ns-content": "node backend/src/scripts/generate/build-national-security-content.js",
+    "validate:ns": "node backend/src/scripts/generate/validate-national-security-content.js",
+    "build:ns-html": "node backend/src/scripts/generate/validate-national-security-content.js && node backend/src/scripts/generate/build-standalone-maogai-html.js --source content/national-security/course.json --course \"国家安全教育\" --output dist/national-security-quiz.html --title \"国家安全教育题库\" --storage-key \"national-security-quiz-progress-v1\" --no-auto-notes --require-explanations"
   },
   "dependencies": {
     "pg": "^8.22.0"

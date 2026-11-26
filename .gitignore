@@ -9,7 +9,9 @@ data/*.bak*
 .omo/
 .codegraph/
 dist/
+public/
 output/
 .test-tmp/
+.playwright-cli/
 # hindsight MCP registration (machine-specific)
 .trae/mcp.json

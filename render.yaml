@@ -4,3 +4,10 @@ services:
     runtime: node
     buildCommand: npm install
     startCommand: npm start
+  - type: static
+    name: quiz-platform-static
+    buildCommand: 'node backend/src/scripts/generate/validate-national-security-content.js && node backend/src/scripts/generate/build-standalone-maogai-html.js --source content/national-security/course.json --course "国家安全教育" --output public/index.html --title "国家安全教育题库" --storage-key "national-security-quiz-progress-v1" --no-auto-notes --require-explanations'
+    staticPublishPath: public
+    envVars:
+      - key: SKIP_INSTALL_DEPS
+        value: "true"

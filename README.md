@@ -20,7 +20,7 @@
   - 题目收藏（星标收藏，支持筛选）
 - **复习分析**：统计待清错题、反复错、多选错题与已掌握题目，按薄弱板块给出复习顺序
 - **解析与速记**：可批量生成每题解析和速记提示，也可手动编辑
-- **数据同步**：支持 PostgreSQL 数据库，手机和电脑可同步刷题进度
+- **数据同步**：动态版支持 PostgreSQL 数据库；国家安全教育静态版把进度保存在当前手机浏览器，支持导出和导入
 - **答题统计**：记录正确率、错题次数等
 
 ## 启动
@@ -93,13 +93,28 @@ DATABASE_URL=你的 PostgreSQL 连接地址（可选）
 
 ## 离线 HTML
 
-需要把题库打包成单个 HTML 文件时：
+需要把毛概题库打包成单个 HTML 文件时：
 
 ```powershell
 npm run build:maogai-html
 ```
 
 产物在 `dist/maogai-quiz.html`。
+
+## 国家安全教育静态题库（手机）
+
+国家安全教育 290 道题打包成单文件 HTML，部署到 Render Static Site，手机打开链接即可刷题，不依赖数据库。
+
+```powershell
+npm run validate:ns     # 校验 290 道题的解析、答案和引用
+npm run build:ns-html   # 生成 dist/national-security-quiz.html
+```
+
+- 内容源：`content/national-security/course.json`
+- 解析批次：`content/national-security/explanations/batch-*.json`
+- 进度保存在手机浏览器的 localStorage；页面提供“导出进度”和“导入进度”。
+- 静态站点由 `render.yaml` 的 `quiz-platform-static` 服务构建，发布目录 `public/`。
+- 旧 Render Web Service 继续使用 Supabase，属于旧版入口；国家安全教育以静态站点为准。
 
 ## 键盘快捷键
 

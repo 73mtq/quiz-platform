@@ -1083,6 +1083,7 @@ select:focus {
   border-left-width: 8px;
   font-size: 13px;
   line-height: 1.8;
+  white-space: pre-line;
   animation: panelIn var(--duration-normal) steps(3, end);
   overflow-wrap: anywhere;
 }
@@ -1480,6 +1481,7 @@ select:focus {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.6;
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 
