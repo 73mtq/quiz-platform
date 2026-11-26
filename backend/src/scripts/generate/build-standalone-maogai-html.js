@@ -17,6 +17,7 @@ const courseName = String(cli.course || "").trim();
 const pageTitle = String(cli.title || "").trim();
 const autoNotes = !cli.noAutoNotes;
 const requireExplanations = Boolean(cli.requireExplanations);
+const legacyProgressUrl = String(cli.legacyProgressUrl || "").trim();
 const storageKey = String(cli.storageKey || "").trim()
   || (courseName ? `quiz-html-progress-${encodeURIComponent(courseName)}-v1` : "maogai-quiz-html-progress-maogai-only-v1");
 const settingsKey = String(cli.settingsKey || "").trim()
@@ -59,6 +60,7 @@ const payload = {
     settingsKey,
     progressFileName: resolvedTitle.replace(/题库离线刷题$/, "题库") + "刷题进度",
     autoNotes,
+    legacyProgressUrl,
     explanationCount,
     memoryTipCount,
     generatedAt: new Date().toISOString(),
@@ -934,6 +936,7 @@ function renderHtml(data) {
       <div id="courseMeta" class="toolbar-meta"></div>
       <button id="exportProgressBtn" class="ghost" type="button">导出进度</button>
       <button id="importProgressBtn" class="ghost" type="button">导入进度</button>
+      <button id="importLegacyBtn" class="ghost" type="button" style="display:none">导入旧版进度</button>
       <input id="progressFileInput" type="file" accept="application/json" hidden>
     </section>
 
@@ -2621,6 +2624,11 @@ function clientApp() {
     $("#exportProgressBtn").addEventListener("click", exportProgress);
     $("#importProgressBtn").addEventListener("click", () => $("#progressFileInput").click());
     $("#progressFileInput").addEventListener("change", importProgress);
+    const legacyBtn = $("#importLegacyBtn");
+    if (legacyBtn && embedded.metadata.legacyProgressUrl) {
+      legacyBtn.style.display = "";
+      legacyBtn.addEventListener("click", importLegacyProgress);
+    }
 
     bindKeyboardShortcuts();
   }
@@ -2713,35 +2721,53 @@ function clientApp() {
     URL.revokeObjectURL(url);
   }
 
+  async function applyImportedProgress(payload) {
+    if (!isCompatibleProgressHash(payload.bankHash, payload.coreHash)) {
+      if (!confirm("进度文件来自不同题库版本，仍要导入吗？")) return false;
+    }
+    const importedIds = Object.keys(payload.questionProgress || {});
+    const knownIds = new Set(runtime.state.courses.flatMap((course) => (course.questions || []).map((question) => question.id)));
+    const appliedCount = importedIds.filter((id) => knownIds.has(id)).length;
+    payload.embeddedProgressSignature = embeddedProgressSignature;
+    if (!writeStorage(STORAGE_KEY, JSON.stringify(payload))) {
+      alert("浏览器禁止写入本地存储，进度无法导入。请换用普通浏览器窗口后重试。");
+      return false;
+    }
+    activeProgressSignature = embeddedProgressSignature;
+    runtime.state = hydrateState();
+    clearCurrentAnswer();
+    runtime.questionHistory = [];
+    renderApp();
+    updatePrevBtn();
+    setupExamTimer();
+    const skipped = importedIds.length - appliedCount;
+    alert(`进度已导入：${appliedCount} 道题的统计已恢复${skipped > 0 ? `，${skipped} 道题因题库版本不同被跳过` : ""}。`);
+    return true;
+  }
+
   async function importProgress(event) {
     const file = event.target.files?.[0];
     if (!file) return;
     try {
       const payload = JSON.parse(await file.text());
-      if (!isCompatibleProgressHash(payload.bankHash, payload.coreHash)) {
-        if (!confirm("进度文件来自不同题库版本，仍要导入吗？")) return;
-      }
-      const importedIds = Object.keys(payload.questionProgress || {});
-      const knownIds = new Set(runtime.state.courses.flatMap((course) => (course.questions || []).map((question) => question.id)));
-      const appliedCount = importedIds.filter((id) => knownIds.has(id)).length;
-      payload.embeddedProgressSignature = embeddedProgressSignature;
-      if (!writeStorage(STORAGE_KEY, JSON.stringify(payload))) {
-        alert("浏览器禁止写入本地存储，进度无法导入。请换用普通浏览器窗口后重试。");
-        return;
-      }
-      activeProgressSignature = embeddedProgressSignature;
-      runtime.state = hydrateState();
-      clearCurrentAnswer();
-      runtime.questionHistory = [];
-      renderApp();
-      updatePrevBtn();
-      setupExamTimer();
-      const skipped = importedIds.length - appliedCount;
-      alert(`进度已导入：${appliedCount} 道题的统计已恢复${skipped > 0 ? `，${skipped} 道题因题库版本不同被跳过` : ""}。`);
+      await applyImportedProgress(payload);
     } catch (error) {
       alert(`导入失败：${error.message}`);
     } finally {
       event.target.value = "";
+    }
+  }
+
+  async function importLegacyProgress() {
+    if (!embedded.metadata.legacyProgressUrl) return;
+    if (!confirm("导入旧版国家安全教育进度？当前浏览器里的进度会被覆盖。")) return;
+    try {
+      const response = await fetch(embedded.metadata.legacyProgressUrl, { cache: "no-store" });
+      if (!response.ok) throw new Error(`下载失败：HTTP ${response.status}`);
+      const payload = await response.json();
+      await applyImportedProgress(payload);
+    } catch (error) {
+      alert(`导入旧版进度失败：${error.message}`);
     }
   }
 
