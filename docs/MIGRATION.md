@@ -20,7 +20,8 @@ $env:DATABASE_URL="postgresql://..."
 npm run migrate:to-db
 ```
 
-- 目标库使用单行 JSONB 表（`quiz_data`），写入覆盖式，不会清空其他表
+- 目标库使用单行三列（`data` / `practice` / `stats`）的 `quiz_data` 表，写入覆盖式，不会清空其他表
+- 写库前会把当前行备份到 `quiz_data_backups`；需要恢复时运行 `npm run restore:db`
 - 迁移完成后启动服务时设置同一个 `DATABASE_URL`，自动切换到 SQL 仓库
 
 ## 批量导入题库文件
@@ -69,3 +70,4 @@ npm run build:ns-pages     # 生成 docs/index.html，推送后 GitHub Pages 自
 - 构建会关闭毛概专用的自动解析生成，保留人工解析。
 - 进度保存在浏览器 localStorage，页面提供“导出进度/导入进度”。
 - 旧服务器进度可以用 `backend/src/scripts/migrate/export-standalone-progress.js` 转成静态页可导入的 JSON。
+- 题库哈希变化时，静态页会先按题目 ID 合并本地进度，保留仍然存在的题目记录。

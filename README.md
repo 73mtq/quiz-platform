@@ -37,6 +37,7 @@ npm start
 ```powershell
 npm test        # node --test，运行全部单元与集成测试
 npm run check   # 对 backend/src 与 frontend/src 全部 .js 做语法检查
+npm run test:sql # SQL 仓库集成测试，需要 TEST_DATABASE_URL 指向一次性数据库
 ```
 
 ## 数据存储
@@ -53,7 +54,13 @@ data/quiz-data.json
 
 ### PostgreSQL 数据库（推荐）
 
-配置环境变量 `DATABASE_URL` 即可使用数据库存储，支持多设备同步。
+配置环境变量 `DATABASE_URL` 即可使用数据库存储。运行时数据仍在 `quiz_data` 单行，分为 `data`（课程与题目正文）、`practice`（当前课程与每门课程的练习状态）、`stats`（每道题的统计、收藏、复习记录）三列，练习与答题只写 `practice` 或 `stats`。
+
+首次读取旧版单列 `data` 时会在事务内自动迁移，并把迁移前整行写入 `quiz_data_backups`。需要恢复时：
+
+```powershell
+npm run restore:db
+```
 
 从旧版 `quiz-maker` 迁移题库：
 
@@ -124,7 +131,7 @@ npm run build:ns-pages  # 生成 docs/index.html，推送后 GitHub Pages 自动
 
 | 快捷键 | 功能 |
 |--------|------|
-| A–H | 选择对应选项 |
-| Enter | 提交答案 |
-| → 或 Space | 下一题 |
-| ← | 上一题 |
+| A–H | 选择对应选项（仅在刷题面板生效） |
+| Enter | 提交答案（仅在刷题面板生效） |
+| → 或 Space | 下一题（仅在刷题面板生效） |
+| ← | 上一题（仅在刷题面板生效） |

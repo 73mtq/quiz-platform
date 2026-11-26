@@ -1,4 +1,5 @@
 import { activeCourse, currentQuestion, runtime, settings } from "../state/appState.js";
+import { courseQuestionCount } from "../state/practiceState.js";
 import { getChoiceAnswerTexts, hasChoiceAnswer, normalizeChoiceText } from "../utils/answers.js";
 import { escapeHtml, rate } from "../utils/format.js";
 import {
@@ -6,26 +7,27 @@ import {
   examRemainingCount,
   isPracticeRoundComplete,
   isPracticeRoundStarted,
+  isQuestionAnsweredInRound,
   roundAnsweredCount,
   roundQuestionTotal,
   roundRemainingCount,
   stripMemoryTipLabel
 } from "../utils/practiceFlow.js";
 import { analyzeReview, getQuestionTags, isMasteredWrongQuestion, isPendingWrongQuestion, sortWrongQuestions } from "../utils/review.js";
-
-/** 随机打乱数组（Fisher-Yates 洗牌算法） */
-function shuffleArray(arr) {
-  const copy = [...arr];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy;
-}
+import { createOptionOrderCache } from "./optionOrder.js";
 
 const $ = (selector) => document.querySelector(selector);
 const EXAM_MODES = new Set(["exam", "exam-wrong"]);
 const BANK_RENDER_LIMIT = 120;
+const optionOrders = createOptionOrderCache();
+
+export function clearAllOptionOrders() {
+  optionOrders.clearAll();
+}
+
+export function clearOptionOrder(questionId) {
+  optionOrders.clear(questionId);
+}
 
 /** 给答题卡片添加切换动画（仅桌面端，移动端跳过以提升性能） */
 function animateQuizCard() {
@@ -41,7 +43,7 @@ export function renderApp() {
   const course = activeCourse();
   $("#questionCount").textContent = course.questions.length;
   $("#courseSelect").innerHTML = runtime.state.courses.map((item) => (
-    `<option value="${escapeHtml(item.id)}" ${item.id === runtime.state.activeCourseId ? "selected" : ""}>${escapeHtml(item.name)}（${item.questions.length}题）</option>`
+    `<option value="${escapeHtml(item.id)}" ${item.id === runtime.state.activeCourseId ? "selected" : ""}>${escapeHtml(item.name)}（${courseQuestionCount(item)}题）</option>`
   )).join("");
   renderPractice(course);
   renderReview(course);
@@ -244,12 +246,14 @@ function updatePracticeActions({ practice, mode, question, complete }) {
   const submitBtn = $("#submitBtn");
   const nextBtn = $("#nextBtn");
   const finishedExam = isExamMode(mode) && practice.exam?.finishedAt;
-  const submitted = question && runtime.answerFeedback?.questionId === question.id;
+  const hasFeedback = question && runtime.answerFeedback?.questionId === question.id;
+  const answered = question && isQuestionAnsweredInRound(practice, question.id);
+  const submitted = Boolean(hasFeedback || answered);
 
   if (submitBtn) {
     submitBtn.style.display = question ? "" : "none";
-    submitBtn.disabled = !question || Boolean(submitted) || Boolean(finishedExam);
-    submitBtn.textContent = submitted ? "已提交" : "提交答案";
+    submitBtn.disabled = !question || submitted || Boolean(finishedExam);
+    submitBtn.textContent = hasFeedback ? "已提交" : submitted ? "本轮已作答" : "提交答案";
   }
 
   if (nextBtn) {
@@ -322,7 +326,8 @@ function renderChoicePractice(question) {
   const wrongCount = question.wrongCount || 0;
   const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
   const bookmarked = question.bookmarked ? "active" : "";
-  const options = settings.shuffleOptions ? shuffleArray(question.options) : question.options;
+  const options = settings.shuffleOptions ? optionOrders.ordered(question) : question.options;
+  const answered = isQuestionAnsweredInRound(activeCourse().practice, question.id);
   const stem = String(question.stem || "").trim() || "题干缺失";
   $("#quizCard").innerHTML = `
     <div class="quiz-card-header">
@@ -332,7 +337,7 @@ function renderChoicePractice(question) {
     <div class="option-list">
       ${options.map((option) => `
         <label class="option ${optionClass(question, option)}">
-          <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback ? "disabled" : ""}>
+          <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback || answered ? "disabled" : ""}>
           <span><b>${escapeHtml(option.key)}.</b> ${escapeHtml(option.text)}</span>
         </label>
       `).join("")}
@@ -358,7 +363,8 @@ function renderChoicePractice(question) {
 
 function renderFillBlankPractice(question) {
   const feedback = runtime.answerFeedback;
-  const hasSubmitted = feedback && feedback.questionId === question.id;
+  const hasSubmitted = (feedback && feedback.questionId === question.id)
+    || isQuestionAnsweredInRound(activeCourse().practice, question.id);
   const blankCount = question.answer.length;
   const blankHint = blankCount > 1 ? `<span class="multi-hint">（共 ${blankCount} 个空）</span>` : "";
   const wrongCount = question.wrongCount || 0;

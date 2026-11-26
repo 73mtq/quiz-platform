@@ -7,6 +7,9 @@ export const settings = {
 
 export const runtime = {
   state: null,
+  revision: 0,
+  pendingCourseId: null,
+  explanationsLoaded: new Set(),
   selectedAnswers: [],
   answerFeedback: null,
   bankSearch: "",
@@ -20,16 +23,18 @@ export const runtime = {
   finishingExam: false,
   bankShowWrongOnly: false,
   bankShowBookmarkedOnly: false,
-  questionHistory: [] // 上一题历史栈
+  questionHistory: [] // 上一题历史
 };
 
 export function activeCourse() {
+  if (!runtime.state?.courses?.length) return null;
   return runtime.state.courses.find((course) => course.id === runtime.state.activeCourseId) || runtime.state.courses[0];
 }
 
 export function currentQuestion() {
   const course = activeCourse();
-  return course.questions.find((question) => question.id === course.practice.currentQuestionId);
+  if (!course || !course.practice || !Array.isArray(course.questions)) return null;
+  return course.questions.find((question) => question.id === course.practice.currentQuestionId) || null;
 }
 
 export function clearCurrentAnswer() {

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import test from "node:test";
 import { createRouter } from "../src/routes.js";
+import { normalizePractice } from "../src/repositories/StateShape.js";
 import { buildStudyNotes, stripMemoryTipLabel } from "../src/services/StudyNoteGenerator.js";
 import { normalizeQuestion } from "../src/utils.js";
 import {
@@ -26,6 +27,10 @@ function emptyPractice() {
     lastAnswer: null,
     mode: "all",
     count: 0,
+    roundTotal: 0,
+    answeredIds: [],
+    historyIds: [],
+    recentOperationIds: [],
     exam: {
       timeLimitMinutes: 20,
       startedAt: "",
@@ -105,17 +110,107 @@ function createLargeExamState(total = 40) {
 class MemoryRepository {
   constructor(state) {
     this.state = clone(state);
+    this.revision = 0;
+  }
+
+  async readState() {
+    return clone(this.state);
   }
 
   async getState() {
     return clone(this.state);
   }
 
+  getRevision() {
+    return this.revision;
+  }
+
   async update(mutator) {
     const draft = clone(this.state);
-    await mutator(draft);
+    const changed = await mutator(draft);
+    if (changed !== false) {
+      this.state = draft;
+      this.revision += 1;
+    }
+    return clone(this.state);
+  }
+
+  async updatePractice(courseId, mutator, { operationId = "" } = {}) {
+    return this._updateCourse(courseId, null, mutator, operationId);
+  }
+
+  async updateAnswer(courseId, questionId, mutator, { operationId = "" } = {}) {
+    return this._updateCourse(courseId, questionId, mutator, operationId);
+  }
+
+  async updateStats(courseId, questionId, mutator, { operationId = "" } = {}) {
+    return this._updateCourse(courseId, questionId, mutator, operationId);
+  }
+
+  async _updateCourse(courseId, questionId, mutator, operationId) {
+    const draft = clone(this.state);
+    const course = draft.courses.find((item) => item.id === (courseId || draft.activeCourseId));
+    if (!course) return null;
+    if (questionId && !course.questions.some((question) => question.id === questionId)) {
+      return { missingQuestion: true };
+    }
+
+    const currentPractice = normalizePractice(course.practice);
+    const op = String(operationId || "").trim();
+    const question = questionId
+      ? course.questions.find((item) => item.id === questionId)
+      : null;
+    if (op && currentPractice.recentOperationIds.includes(op)) {
+      return {
+        duplicate: true,
+        courseId: course.id,
+        practice: currentPractice,
+        question,
+        revision: this.revision
+      };
+    }
+
+    course.practice = normalizePractice(currentPractice);
+    const view = { activeCourseId: course.id, courses: [course] };
+    const changed = await mutator(view);
+    if (changed === false) {
+      return {
+        duplicate: false,
+        courseId: course.id,
+        practice: normalizePractice(course.practice),
+        question,
+        revision: this.revision
+      };
+    }
+
+    const nextPractice = normalizePractice(course.practice);
+    if (op) {
+      nextPractice.recentOperationIds = [op, ...nextPractice.recentOperationIds.filter((id) => id !== op)].slice(0, 50);
+    }
+    course.practice = nextPractice;
     this.state = draft;
-    return this.getState();
+    this.revision += 1;
+    return {
+      duplicate: false,
+      courseId: course.id,
+      practice: nextPractice,
+      question,
+      revision: this.revision
+    };
+  }
+
+  async setActiveCourse(courseId) {
+    const course = this.state.courses.find((item) => item.id === courseId);
+    if (!course) return null;
+    if (this.state.activeCourseId !== courseId) {
+      this.state.activeCourseId = courseId;
+      this.revision += 1;
+    }
+    return {
+      activeCourseId: courseId,
+      course: clone(course),
+      revision: this.revision
+    };
   }
 
   getActiveCourse(state) {
@@ -220,24 +315,30 @@ test("practice endpoints return a practice patch instead of the full state", asy
 });
 
 test("wrong answer resets review progress and clears mastered flag", async () => {
-  const payload = await postPractice("/api/practice/answer", {
-    questionId: "mastered-wrong",
-    selectedAnswers: ["Beta"]
-  });
-  const question = payload.question;
+  const state = createState();
+  state.courses[0].practice.currentQuestionId = "mastered-wrong";
 
-  assert.equal(payload.answerResult.correct, false);
-  assert.equal(question.wrongCount, 4);
-  assert.equal(question.review.consecutiveCorrect, 0);
-  assert.equal(question.review.masteredAt, "");
-  assert.deepEqual(question.review.lastSelectedAnswers, ["Beta"]);
-  assert.ok(question.review.lastWrongAt);
+  await withServer(state, async (request) => {
+    const payload = await request("/api/practice/answer", {
+      questionId: "mastered-wrong",
+      selectedAnswers: ["Beta"]
+    });
+    const question = payload.question;
+
+    assert.equal(payload.answerResult.correct, false);
+    assert.equal(question.wrongCount, 4);
+    assert.equal(question.review.consecutiveCorrect, 0);
+    assert.equal(question.review.masteredAt, "");
+    assert.deepEqual(question.review.lastSelectedAnswers, ["Beta"]);
+    assert.ok(question.review.lastWrongAt);
+  });
 });
 
 test("wrong question becomes mastered after two consecutive correct answers", async () => {
   const state = createState();
   const question = state.courses[0].questions.find((item) => item.id === "wrong-only");
   question.review = { consecutiveCorrect: 1 };
+  state.courses[0].practice.currentQuestionId = "wrong-only";
   const repository = new MemoryRepository(state);
   const router = createRouter({ repository, aiService: {} });
   const server = http.createServer(router);
@@ -275,16 +376,18 @@ test("memoryTip survives normalization and update route", async () => {
 
   assert.equal(normalized.memoryTip, "quick cue");
 
-  await withServer(createState(), async (request) => {
-    const state = await request("/api/questions/update", {
+  await withServer(createState(), async (request, repository, baseUrl) => {
+    await request("/api/questions/update", {
       questionId: "wrong-only",
       explanation: "updated explanation",
       memoryTip: "updated cue"
     });
-    const question = state.courses[0].questions.find((item) => item.id === "wrong-only");
+    const response = await fetch(`${baseUrl}/api/explanations?courseId=course-1`);
+    const payload = await response.json();
+    const note = payload.explanations["wrong-only"];
 
-    assert.equal(question.explanation, "updated explanation");
-    assert.equal(question.memoryTip, "updated cue");
+    assert.equal(note.explanation, "updated explanation");
+    assert.equal(note.memoryTip, "updated cue");
   });
 });
 
@@ -457,6 +560,7 @@ test("finish-exam returns summary and exam-wrong uses last wrong ids", async () 
   await withServer(createState(), async (request) => {
     const reset = await request("/api/practice/reset-round", { mode: "exam", count: 3, timeLimitMinutes: 20 });
     const roundIds = reset.practice.exam.questionIds;
+    await request("/api/practice/next", { mode: "exam", count: 3, timeLimitMinutes: 20 });
 
     await request("/api/practice/answer", {
       questionId: roundIds[0],
@@ -507,7 +611,9 @@ test("switching practice mode starts a fresh round instead of reusing old ids", 
 });
 
 test("duplicate answer is rejected without changing counters", async () => {
-  await withServer(createState(), async (request) => {
+  const state = createState();
+  state.courses[0].practice.currentQuestionId = "unanswered";
+  await withServer(state, async (request) => {
     const first = await request("/api/practice/answer", { questionId: "unanswered", selectedAnswers: ["Alpha"] });
     assert.equal(first.answerResult.accepted, true);
 
@@ -526,7 +632,7 @@ test("delete question clears round references", async () => {
 
   await withServer(state, async (request) => {
     const result = await request("/api/questions/delete", { questionId: "unanswered" });
-    const course = result.courses[0];
+    const course = result.course;
 
     assert.equal(course.questions.some((question) => question.id === "unanswered"), false);
     assert.deepEqual(course.practice.remainingIds, ["wrong-only"]);
@@ -549,14 +655,15 @@ test("courses can be added and deleted, last course is kept", async () => {
 });
 
 test("study notes generation fills explanation and memory tip", async () => {
-  await withServer(createState(), async (request) => {
+  await withServer(createState(), async (request, repository, baseUrl) => {
     const result = await request("/api/study-notes/generate", {});
-    const question = result.state.courses[0].questions.find((item) => item.id === "wrong-only");
+    const response = await fetch(`${baseUrl}/api/explanations?courseId=course-1`);
+    const note = (await response.json()).explanations["wrong-only"];
 
     assert.equal(result.result.scanned, 6);
     assert.ok(result.result.explanationAdded > 0);
-    assert.ok(question.explanation);
-    assert.ok(question.memoryTip);
+    assert.ok(note.explanation);
+    assert.ok(note.memoryTip);
   });
 });
 
@@ -600,6 +707,152 @@ test("state response is gzip compressed and static files support etag", async ()
 
     const cached = await fetch(`${baseUrl}/src/main.js`, { headers: { "if-none-match": etag } });
     assert.equal(cached.status, 304);
+  });
+});
+
+
+function createTwoCourseState() {
+  const state = createState();
+  state.courses.push({
+    id: "course-2",
+    name: "第二课程",
+    questions: [choiceQuestion({ id: "other-q", stem: "other question", wrongCount: 0, correctCount: 0 })],
+    practice: emptyPractice(),
+    createdAt: "2026-01-01T00:00:00.000Z"
+  });
+  return state;
+}
+
+test("bootstrap returns only active course questions", async () => {
+  await withServer(createTwoCourseState(), async (request, repository, baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/bootstrap`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+
+    assert.equal(payload.course.id, "course-1");
+    assert.equal(payload.course.questions.length, 6);
+    const inactive = payload.courses.find((course) => course.id === "course-2");
+    assert.equal(inactive.questionCount, 1);
+    assert.equal(inactive.questions, undefined);
+    assert.equal(JSON.stringify(payload).includes("other question"), false);
+
+    const full = await (await fetch(`${baseUrl}/api/state`)).json();
+    assert.equal(full.courses.length, 2);
+    assert.equal(full.courses[1].questions.length, 1);
+  });
+});
+
+test("explanations endpoint returns the course notes", async () => {
+  const state = createState();
+  const question = state.courses[0].questions.find((item) => item.id === "wrong-only");
+  question.explanation = "解析一";
+  question.memoryTip = "速记一";
+
+  await withServer(state, async (request, repository, baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/explanations?courseId=course-1`);
+    const payload = await response.json();
+    assert.equal(payload.courseId, "course-1");
+    assert.equal(payload.explanations["wrong-only"].explanation, "解析一");
+    assert.equal(payload.explanations["wrong-only"].memoryTip, "速记一");
+  });
+});
+
+test("course switch returns the target course", async () => {
+  await withServer(createTwoCourseState(), async (request, repository, baseUrl) => {
+    const payload = await request("/api/courses/active", { courseId: "course-2" });
+    assert.equal(payload.activeCourseId, "course-2");
+    assert.equal(payload.course.id, "course-2");
+    assert.equal(payload.course.questions.length, 1);
+
+    const missing = await fetch(`${baseUrl}/api/courses/active`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ courseId: "missing" })
+    });
+    assert.equal(missing.status, 404);
+  });
+});
+
+test("answer rejects a question that is not current", async () => {
+  const state = createState();
+  state.courses[0].practice.currentQuestionId = "unanswered";
+
+  await withServer(state, async (request) => {
+    const rejected = await request("/api/practice/answer", {
+      questionId: "bookmarked",
+      selectedAnswers: ["Alpha"]
+    });
+    assert.equal(rejected.answerResult.accepted, false);
+    assert.equal(rejected.practice.totalAnswered, 0);
+
+    const accepted = await request("/api/practice/answer", {
+      questionId: "unanswered",
+      selectedAnswers: ["Alpha"]
+    });
+    assert.equal(accepted.answerResult.accepted, true);
+  });
+});
+
+test("prev restores current question and remaining ids", async () => {
+  const state = createState();
+  const practice = state.courses[0].practice;
+  practice.currentQuestionId = "unanswered";
+  practice.remainingIds = ["bookmarked"];
+  practice.roundTotal = 2;
+
+  await withServer(state, async (request) => {
+    const next = await request("/api/practice/next", { mode: "all" });
+    assert.equal(next.practice.currentQuestionId, "bookmarked");
+    assert.deepEqual(next.practice.historyIds, ["unanswered"]);
+
+    const previous = await request("/api/practice/prev", {});
+    assert.equal(previous.practice.currentQuestionId, "unanswered");
+    assert.deepEqual(previous.practice.remainingIds, ["bookmarked"]);
+    assert.deepEqual(previous.practice.historyIds, []);
+  });
+});
+
+test("duplicate operation id does not count twice", async () => {
+  const state = createState();
+  state.courses[0].practice.currentQuestionId = "unanswered";
+
+  await withServer(state, async (request) => {
+    const first = await request("/api/practice/answer", {
+      questionId: "unanswered",
+      selectedAnswers: ["Alpha"],
+      operationId: "op-1"
+    });
+    const second = await request("/api/practice/answer", {
+      questionId: "unanswered",
+      selectedAnswers: ["Alpha"],
+      operationId: "op-1"
+    });
+
+    assert.equal(second.answerResult.duplicate, true);
+    assert.equal(second.practice.totalAnswered, first.practice.totalAnswered);
+  });
+});
+
+test("answer targets the supplied course instead of the active course", async () => {
+  const state = createTwoCourseState();
+  const target = state.courses[1];
+  target.practice.currentQuestionId = "other-q";
+  target.practice.remainingIds = [];
+  target.practice.roundTotal = 1;
+
+  await withServer(state, async (request, repository, baseUrl) => {
+    const payload = await request("/api/practice/answer", {
+      courseId: "course-2",
+      questionId: "other-q",
+      selectedAnswers: ["Alpha"]
+    });
+    assert.equal(payload.answerResult.accepted, true);
+    assert.equal(payload.courseId, "course-2");
+
+    const full = await (await fetch(`${baseUrl}/api/state`)).json();
+    assert.equal(full.activeCourseId, "course-1");
+    assert.equal(full.courses.find((course) => course.id === "course-2").practice.totalAnswered, 1);
+    assert.equal(full.courses.find((course) => course.id === "course-1").practice.totalAnswered, 0);
   });
 });
 

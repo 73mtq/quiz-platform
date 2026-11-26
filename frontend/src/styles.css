@@ -2052,3 +2052,48 @@ select:focus {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.app-status,
+.sync-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 2px solid var(--ink);
+  background: var(--card);
+  box-shadow: var(--shadow-pixel-sm);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.app-status[hidden],
+.sync-status[hidden] {
+  display: none;
+}
+
+.app-status[data-tone="error"],
+.sync-status {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.app-status a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.app-status button,
+.sync-status button {
+  padding: 4px 10px;
+  border: 2px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}

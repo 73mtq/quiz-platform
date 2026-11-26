@@ -1,20 +1,36 @@
 import { api } from "./api/client.js";
 import { activeCourse, clearCurrentAnswer, currentQuestion, persistFeedbackSettings, runtime, settings } from "./state/appState.js";
-import { renderApp, renderImportResult, updateBankListOnly, updatePracticeOnly } from "./ui/render.js";
+import {
+  applyCoursePayload,
+  applyExplanations as mergeExplanations,
+  applyPracticePayload as mergePracticePayload,
+  applyPracticeStats as mergePracticeStats,
+  applyQuestionPayload as mergeQuestionPayload,
+  hydrateStatePayload
+} from "./state/practiceState.js";
+import { clearAllOptionOrders, clearOptionOrder, renderApp, renderImportResult, updateBankListOnly, updatePracticeOnly } from "./ui/render.js";
 import { getChoiceAnswerTexts, isChoiceAnswerCorrect, isFillBlankAnswerCorrect, normalizeChoiceText } from "./utils/answers.js";
 import { escapeHtml, readFileAsDataUrl } from "./utils/format.js";
 import { parseQuestions } from "./utils/parser.js";
-import { applyLocalPracticeConfig, isPracticeRoundComplete, shouldAutoNextAfterSubmit } from "./utils/practiceFlow.js";
+import {
+  applyLocalPracticeConfig,
+  isPracticeRoundComplete,
+  isQuestionAnsweredInRound,
+  shouldAutoNextAfterSubmit
+} from "./utils/practiceFlow.js";
 import { applyQuestionReview } from "./utils/review.js";
 
 const $ = (selector) => document.querySelector(selector);
 const EXAM_MODES = new Set(["exam", "exam-wrong"]);
 let activeCourseSync = Promise.resolve();
-let activeCourseSyncError = null;
 let activeCourseSwitchToken = 0;
 let bankSearchRenderTimer = null;
 let toastTimer = null;
 let practiceSync = Promise.resolve();
+let examFinishFailed = false;
+let booted = false;
+let bootPromise = null;
+const practiceFailures = [];
 
 const sample = `1. 下列哪项活动不是项目（）。
 A. 开发操作系统
@@ -33,6 +49,25 @@ function showToast(message) {
   toastTimer = setTimeout(() => toast.classList.remove("is-visible"), 4000);
 }
 
+function showAppStatus(message, { tone = "info", action = null } = {}) {
+  const target = $("#appStatus");
+  if (!target) return;
+  target.hidden = false;
+  target.dataset.tone = tone;
+  target.innerHTML = `<span>${escapeHtml(message)}</span>${action ? `<button type="button" id="appStatusAction">${escapeHtml(action.label)}</button>` : ""}<a href="/national-security.html">打开国家安全教育静态题库</a>`;
+  if (action) {
+    const button = $("#appStatusAction");
+    if (button) button.onclick = action.onClick;
+  }
+}
+
+function hideAppStatus() {
+  const target = $("#appStatus");
+  if (!target) return;
+  target.hidden = true;
+  target.innerHTML = "";
+}
+
 async function request(action, failureMessage) {
   try {
     return { ok: true, value: await action() };
@@ -42,41 +77,117 @@ async function request(action, failureMessage) {
   }
 }
 
+function createOperationId() {
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  return `op-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function enqueuePracticeSync(task) {
   const run = practiceSync.then(task, task);
   practiceSync = run.then(() => undefined, () => undefined);
   return run;
 }
 
-function applyQuestionPayload(payload) {
-  const course = activeCourse();
-  if (!payload?.courseId || payload.courseId !== course.id || !payload.question) return false;
-  const question = course.questions.find((item) => item.id === payload.question.id);
-  if (!question) return false;
-  Object.assign(question, payload.question);
+function acceptRevision(payload) {
+  const revision = Number(payload?.revision);
+  if (!Number.isFinite(revision)) return true;
+  if (revision < Number(runtime.revision || 0)) return false;
+  runtime.revision = revision;
   return true;
 }
 
 function applyPracticeStats(payload) {
-  const course = activeCourse();
-  if (!payload?.courseId || payload.courseId !== course.id || !payload.practice) return false;
-  const serverPractice = payload.practice;
-  course.practice.roundNo = serverPractice.roundNo;
-  course.practice.answeredInRound = serverPractice.answeredInRound;
-  course.practice.correctInRound = serverPractice.correctInRound;
-  course.practice.totalAnswered = serverPractice.totalAnswered;
-  course.practice.totalCorrect = serverPractice.totalCorrect;
-  course.practice.exam = serverPractice.exam;
-  applyQuestionPayload(payload);
-  return true;
+  if (!acceptRevision(payload)) return false;
+  return mergePracticeStats(runtime.state, payload);
 }
 
 function applyPracticePayload(payload) {
-  const course = activeCourse();
-  if (!payload?.courseId || payload.courseId !== course.id || !payload.practice) return false;
-  course.practice = payload.practice;
-  applyQuestionPayload(payload);
+  if (!acceptRevision(payload)) return false;
+  return mergePracticePayload(runtime.state, payload);
+}
+
+function applyQuestionPayload(payload) {
+  if (!acceptRevision(payload)) return false;
+  return mergeQuestionPayload(runtime.state, payload);
+}
+
+function hydrateAndApplyState(payload) {
+  if (!acceptRevision(payload)) return false;
+  runtime.state = hydrateStatePayload(payload);
+  runtime.explanationsLoaded = new Set();
   return true;
+}
+
+function applyActiveCoursePayload(payload) {
+  if (!acceptRevision(payload)) return false;
+  if (!applyCoursePayload(runtime.state, payload)) return false;
+  runtime.explanationsLoaded = new Set();
+  runtime.questionHistory = activeCourse()?.practice?.historyIds || [];
+  return true;
+}
+
+function updateSyncBanner() {
+  const banner = $("#syncStatus");
+  if (!banner) return;
+  if (!practiceFailures.length) {
+    banner.hidden = true;
+    banner.innerHTML = "";
+    return;
+  }
+  banner.hidden = false;
+  banner.innerHTML = `<span>有 ${practiceFailures.length} 项练习进度未同步。</span><button id="retryPracticeSyncBtn" type="button">重试</button>`;
+  const button = $("#retryPracticeSyncBtn");
+  if (button) button.onclick = retryPracticeFailures;
+}
+
+function registerPracticeFailure(label, task, apply = applyPracticeStats) {
+  practiceFailures.push({ label, task, apply });
+  updateSyncBanner();
+}
+
+async function retryPracticeFailures() {
+  const failures = practiceFailures.splice(0, practiceFailures.length);
+  for (const failure of failures) {
+    try {
+      const payload = await failure.task();
+      failure.apply(payload);
+    } catch (error) {
+      practiceFailures.push(failure);
+      showToast(`${failure.label}重试失败：${error.message || "请求失败"}`);
+    }
+  }
+  updateSyncBanner();
+}
+
+function handleAnswerPayload(payload, rollback = null) {
+  if (!payload?.answerResult) return;
+  if (payload.answerResult.accepted === false) {
+    if (rollback) rollback();
+    if (payload.answerResult.questionId) {
+      runtime.answerFeedback = {
+        questionId: payload.answerResult.questionId,
+        selectedAnswers: payload.answerResult.selectedAnswers || [],
+        correct: Boolean(payload.answerResult.correct)
+      };
+      runtime.selectedAnswers = runtime.answerFeedback.selectedAnswers;
+    } else {
+      runtime.answerFeedback = null;
+      runtime.selectedAnswers = [];
+    }
+    updatePracticeOnly();
+    showToast(payload.answerResult.message || "答题结果未接受");
+  }
+}
+
+async function ensureExplanationsLoaded() {
+  const course = activeCourse();
+  if (!course || runtime.explanationsLoaded.has(course.id)) return;
+  const result = await request(() => api.explanations(course.id), "加载解析失败");
+  if (!result.ok) return;
+  if (!acceptRevision(result.value)) return;
+  mergeExplanations(runtime.state, result.value);
+  runtime.explanationsLoaded.add(course.id);
+  if ($("#bankPanel")?.classList.contains("active")) renderApp();
 }
 
 function findForm(formId) {
@@ -89,9 +200,13 @@ function bind() {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tabs button,.panel").forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
-      $(`#${button.dataset.tab}`).classList.add("active");
-      // 切换到题库/复习时触发渲染（这些面板默认跳过渲染以提升性能）
-      if (button.dataset.tab === "bankPanel" || button.dataset.tab === "reviewPanel") renderApp();
+      $(`#${button.dataset.tab}`)?.classList.add("active");
+      if (button.dataset.tab === "bankPanel") {
+        renderApp();
+        ensureExplanationsLoaded();
+      } else if (button.dataset.tab === "reviewPanel") {
+        renderApp();
+      }
     });
   });
 
@@ -131,6 +246,7 @@ function bind() {
     shuffleOptionsToggle.addEventListener("change", (event) => {
       settings.shuffleOptions = event.target.checked;
       persistFeedbackSettings();
+      clearAllOptionOrders();
       renderApp();
     });
   }
@@ -180,7 +296,6 @@ function bind() {
     reviewPanel.addEventListener("click", handleReviewActions);
   }
 
-  // 使用事件委托处理答题卡片内的收藏按钮点击
   if (quizCard) {
     quizCard.addEventListener("click", (event) => {
       const target = event.target;
@@ -190,13 +305,12 @@ function bind() {
     });
   }
 
-  // 刷题模式切换
   document.querySelectorAll("input[name='practiceMode']").forEach((radio) => {
     radio.addEventListener("change", (event) => {
       runtime.practiceMode = event.target.value;
       localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
       syncPracticeInputs();
-      stageLocalPracticeRound();
+      resetRound();
     });
   });
 
@@ -212,7 +326,6 @@ function bind() {
         localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
       }
     });
-    // 数量输入框失焦或回车时重置
     countInput.addEventListener("change", () => {
       const value = Math.max(1, Number(countInput.value) || 1);
       if (runtime.practiceMode === "exam") {
@@ -223,7 +336,7 @@ function bind() {
         localStorage.setItem("quiz-platform-practice-count", String(runtime.practiceCount));
       }
       if (runtime.practiceMode === "count" || runtime.practiceMode === "exam") {
-        stageLocalPracticeRound();
+        resetRound();
       }
     });
   }
@@ -239,7 +352,7 @@ function bind() {
       runtime.examTimeLimitMinutes = Math.max(1, Number(examMinutesInput.value) || 1);
       localStorage.setItem("quiz-platform-exam-minutes", String(runtime.examTimeLimitMinutes));
       if (runtime.practiceMode === "exam") {
-        stageLocalPracticeRound();
+        resetRound();
       }
     });
   }
@@ -264,11 +377,12 @@ function activePracticeCount() {
 }
 
 async function ensureActiveCourseSynced() {
-  await activeCourseSync;
-  if (!activeCourseSyncError) return true;
-  const status = $("#status");
-  if (status) status.textContent = `课程切换同步失败：${activeCourseSyncError.message}`;
-  return false;
+  try {
+    await activeCourseSync;
+  } catch {
+    // 课程切换失败时由切换函数显示提示
+  }
+  return !runtime.pendingCourseId;
 }
 
 function syncPracticeInputs() {
@@ -289,13 +403,15 @@ function syncPracticeInputs() {
 
 function stageLocalPracticeRound() {
   const course = activeCourse();
+  if (!course) return;
   applyLocalPracticeConfig(course.practice, {
     mode: runtime.practiceMode,
     count: activePracticeCount(),
     timeLimitMinutes: runtime.examTimeLimitMinutes
   });
-  clearCurrentAnswer();
   runtime.questionHistory = [];
+  clearCurrentAnswer();
+  examFinishFailed = false;
   renderApp();
   updatePrevBtn();
   setupExamTimer();
@@ -308,55 +424,64 @@ async function importText() {
   if (!(await ensureActiveCourseSynced())) return;
   const result = await request(() => api.addQuestions(parsed), "文本导入失败");
   if (!result.ok) return;
-  runtime.state = result.value.state;
+  if (!hydrateAndApplyState(result.value)) return;
   $("#status").textContent = `文本导入完成：成功 ${result.value.importResult.accepted.length} 道，失败 ${result.value.importResult.rejected.length} 道。`;
   renderImportResult(result.value.importResult, "文本导入");
+  clearAllOptionOrders();
   renderApp();
+  updatePrevBtn();
 }
 
 async function setActiveCourse(event) {
   const nextCourseId = event.target.value;
   const previousCourseId = runtime.state.activeCourseId;
   if (nextCourseId === previousCourseId) return;
+  if (runtime.pendingCourseId) {
+    event.target.value = previousCourseId;
+    return;
+  }
 
   const token = ++activeCourseSwitchToken;
-  activeCourseSyncError = null;
-  runtime.state.activeCourseId = nextCourseId;
-  clearCurrentAnswer();
-  runtime.questionHistory = [];
-  renderApp();
-  updatePrevBtn();
-  setupExamTimer();
-
-  activeCourseSync = activeCourseSync
-    .catch(() => {})
-    .then(() => api.setActiveCourse(nextCourseId, { light: true }))
-    .then((result) => {
-      if (token !== activeCourseSwitchToken) return;
-      if (result.activeCourseId !== nextCourseId) throw new Error("服务器未切换到目标课程");
-    })
-    .catch((error) => {
-      if (token !== activeCourseSwitchToken) return;
-      activeCourseSyncError = error;
-      if (runtime.state.activeCourseId === nextCourseId) {
-        runtime.state.activeCourseId = previousCourseId;
-        renderApp();
-        updatePrevBtn();
-        setupExamTimer();
-      }
-      const status = $("#status");
-      if (status) status.textContent = `课程切换同步失败：${error.message}`;
-      showToast(`课程切换同步失败：${error.message}`);
-    });
+  runtime.pendingCourseId = nextCourseId;
+  showAppStatus("正在加载课程…");
+  const task = api.setActiveCourse(nextCourseId);
+  activeCourseSync = task.then(() => undefined, () => undefined);
+  try {
+    const payload = await task;
+    if (token !== activeCourseSwitchToken) return;
+    if (!applyActiveCoursePayload(payload)) throw new Error("服务器没有返回目标课程");
+    clearCurrentAnswer();
+    runtime.practiceMode = activeCourse().practice.mode || runtime.practiceMode;
+    syncPracticeInputs();
+    hideAppStatus();
+    renderApp();
+    updatePrevBtn();
+    setupExamTimer();
+  } catch (error) {
+    if (token !== activeCourseSwitchToken) return;
+    const select = $("#courseSelect");
+    if (select) select.value = previousCourseId;
+    hideAppStatus();
+    showToast(`课程切换失败：${error.message || "请求失败"}`);
+    renderApp();
+  } finally {
+    if (token === activeCourseSwitchToken) runtime.pendingCourseId = null;
+  }
 }
 
 async function addCourse() {
   const result = await request(() => api.addCourse($("#courseName").value.trim() || "新课程"), "新增课程失败");
   if (!result.ok) return;
-  runtime.state = result.value;
+  if (!hydrateAndApplyState(result.value)) return;
   $("#courseName").value = "";
   clearCurrentAnswer();
+  runtime.questionHistory = [];
+  runtime.practiceMode = activeCourse().practice.mode || runtime.practiceMode;
+  syncPracticeInputs();
+  clearAllOptionOrders();
   renderApp();
+  updatePrevBtn();
+  setupExamTimer();
 }
 
 async function deleteCourse() {
@@ -364,16 +489,28 @@ async function deleteCourse() {
   if (!(await ensureActiveCourseSynced())) return;
   const result = await request(() => api.deleteCourse(activeCourse().id), "删除课程失败");
   if (!result.ok) return;
-  runtime.state = result.value;
+  if (!hydrateAndApplyState(result.value)) return;
   clearCurrentAnswer();
+  runtime.questionHistory = [];
+  runtime.practiceMode = activeCourse().practice.mode || "all";
+  syncPracticeInputs();
+  clearAllOptionOrders();
   renderApp();
+  updatePrevBtn();
+  setupExamTimer();
 }
 
 async function nextQuestion() {
+  if (runtime.pendingCourseId) return;
   if (!(await ensureActiveCourseSynced())) return;
   const course = activeCourse();
+  if (!course) return;
   const prevId = course.practice.currentQuestionId;
   const mode = course.practice.mode || runtime.practiceMode;
+  const courseId = course.id;
+  const count = mode === "exam" ? runtime.examCount : runtime.practiceCount;
+  const timeLimitMinutes = runtime.examTimeLimitMinutes;
+  const operationId = createOperationId();
 
   if (isExamMode(mode) && isPracticeRoundComplete(course.practice, mode === "exam" ? runtime.examCount : runtime.practiceCount)) {
     await finishExam(false);
@@ -381,110 +518,137 @@ async function nextQuestion() {
   }
 
   if (isExamMode(mode)) {
-    if (prevId) runtime.questionHistory.push(prevId);
-    const count = mode === "exam" ? runtime.examCount : runtime.practiceCount;
-    const result = await request(
-      () => enqueuePracticeSync(() => api.nextQuestion(mode, count, runtime.examTimeLimitMinutes)),
-      "加载下一题失败"
-    );
-    if (!result.ok) return;
-    applyPracticePayload(result.value);
-    clearCurrentAnswer();
-    updatePracticeOnly();
-    updatePrevBtn();
-    setupExamTimer();
+    const task = () => api.nextQuestion(courseId, mode, count, timeLimitMinutes, operationId);
+    const result = await request(() => enqueuePracticeSync(task), "加载下一题失败");
+    if (!result.ok) {
+      registerPracticeFailure("加载下一题", task, applyNextPayload);
+      return;
+    }
+    applyNextPayload(result.value);
     return;
   }
 
   if (!course.practice.remainingIds.length) {
-    // 题目用完了，需要重新洗牌 —— 必须等服务端返回新的 remainingIds
-    const result = await request(
-      () => enqueuePracticeSync(() => api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes)),
-      "加载下一题失败"
-    );
-    if (!result.ok) return;
-    applyPracticePayload(result.value);
-    clearCurrentAnswer();
-    updatePracticeOnly();
-    updatePrevBtn();
-    setupExamTimer();
+    const task = () => api.nextQuestion(courseId, mode, count, timeLimitMinutes, operationId);
+    const result = await request(() => enqueuePracticeSync(task), "加载下一题失败");
+    if (!result.ok) {
+      registerPracticeFailure("加载下一题", task, applyNextPayload);
+      return;
+    }
+    applyNextPayload(result.value);
     return;
   }
 
-  // 记录历史
-  if (prevId) runtime.questionHistory.push(prevId);
-
-  // 乐观更新：本地立即切换题目
-  course.practice.currentQuestionId = course.practice.remainingIds.shift();
+  if (prevId) {
+    course.practice.historyIds = [...(course.practice.historyIds || []), prevId];
+  }
+  course.practice.currentQuestionId = course.practice.remainingIds.shift() || null;
   course.practice.lastAnswer = null;
+  runtime.questionHistory = course.practice.historyIds;
   clearCurrentAnswer();
   updatePracticeOnly();
   updatePrevBtn();
 
-  // 后台同步服务端（只同步统计数据，不同步 remainingIds）
-  enqueuePracticeSync(() => api.nextQuestion(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes))
+  const task = () => api.nextQuestion(courseId, mode, count, timeLimitMinutes, operationId);
+  enqueuePracticeSync(task)
     .then((payload) => {
-      applyPracticeStats(payload);
+      if (!applyPracticeStats(payload)) return;
+      runtime.questionHistory = activeCourse().practice.historyIds || [];
+      updatePrevBtn();
       setupExamTimer();
     })
     .catch((error) => {
+      registerPracticeFailure("同步下一题", task, (payload) => {
+        applyPracticeStats(payload);
+        runtime.questionHistory = activeCourse().practice.historyIds || [];
+        updatePrevBtn();
+      });
       showToast(`进度同步失败：${error.message || "请求失败"}`);
     });
 }
 
-function prevQuestion() {
-  if (!runtime.questionHistory.length) return;
+async function prevQuestion() {
+  if (runtime.pendingCourseId) return;
+  if (!(await ensureActiveCourseSynced())) return;
   const course = activeCourse();
-  const prevId = runtime.questionHistory.pop();
-  // 把当前题放回 remainingIds 头部
-  if (course.practice.currentQuestionId) {
-    course.practice.remainingIds.unshift(course.practice.currentQuestionId);
+  if (!course || !course.practice.historyIds?.length) return;
+  const courseId = course.id;
+  const operationId = createOperationId();
+  const task = () => api.prevQuestion(courseId, operationId);
+  const result = await request(() => enqueuePracticeSync(task), "加载上一题失败");
+  if (!result.ok) {
+    registerPracticeFailure("加载上一题", task, (payload) => {
+      if (!applyPracticePayload(payload)) return;
+      clearCurrentAnswer();
+      runtime.questionHistory = activeCourse().practice.historyIds || [];
+      updatePracticeOnly();
+      updatePrevBtn();
+    });
+    return;
   }
-  course.practice.currentQuestionId = prevId;
-  course.practice.lastAnswer = null;
+  if (!applyPracticePayload(result.value)) return;
   clearCurrentAnswer();
+  runtime.questionHistory = activeCourse().practice.historyIds || [];
   updatePracticeOnly();
   updatePrevBtn();
 }
 
 function updatePrevBtn() {
-  const btn = $("#prevBtn");
-  if (btn) btn.style.display = runtime.questionHistory.length ? "" : "none";
+  const button = $("#prevBtn");
+  if (!button) return;
+  const course = activeCourse();
+  const history = course?.practice?.historyIds || [];
+  button.style.display = history.length ? "" : "none";
 }
 
 async function submitAnswer() {
+  if (runtime.pendingCourseId) return;
   if (!(await ensureActiveCourseSynced())) return;
+  const course = activeCourse();
   const question = currentQuestion();
-  if (!question) return alert("请先点击下一题。");
+  if (!course || !question) return alert("请先点击下一题。");
+
+  if (isQuestionAnsweredInRound(course.practice, question.id) || runtime.answerFeedback?.questionId === question.id) {
+    return alert("这道题本轮已经作答。");
+  }
 
   const isFillBlank = question.type === "fill-blank";
   if (isFillBlank) {
     const inputs = document.querySelectorAll(".fill-blank-input");
-    runtime.selectedAnswers = Array.from(inputs).map((el) => el.value.trim());
-    if (runtime.selectedAnswers.every((s) => !s)) return alert("请填写答案。");
+    runtime.selectedAnswers = Array.from(inputs).map((element) => element.value.trim());
+    if (runtime.selectedAnswers.every((value) => !value)) return alert("请填写答案。");
   } else {
     if (!runtime.selectedAnswers.length) return alert("请选择答案。");
+    runtime.selectedAnswers = getChoiceAnswerTexts(question, runtime.selectedAnswers);
   }
-  if (runtime.answerFeedback?.questionId === question.id) return alert("这道题已经提交。");
 
-  // 乐观更新：本地立即判断对错，不等服务端
   let correct;
   if (isFillBlank) {
     correct = isFillBlankAnswerCorrect(question, runtime.selectedAnswers);
   } else {
-    runtime.selectedAnswers = getChoiceAnswerTexts(question, runtime.selectedAnswers);
     correct = isChoiceAnswerCorrect(question, runtime.selectedAnswers);
   }
 
-  // 立即显示反馈
+  const statsBefore = {
+    wrongCount: Number(question.wrongCount) || 0,
+    correctCount: Number(question.correctCount) || 0,
+    review: { ...(question.review || {}) }
+  };
+  const rollbackStats = () => {
+    question.wrongCount = statsBefore.wrongCount;
+    question.correctCount = statsBefore.correctCount;
+    question.review = statsBefore.review;
+    if (course.practice.lastAnswer?.questionId === question.id) {
+      course.practice.lastAnswer = null;
+    }
+  };
+
   runtime.answerFeedback = {
     questionId: question.id,
     selectedAnswers: runtime.selectedAnswers,
     correct
   };
 
-  // 更新本地统计
-  const course = activeCourse();
   course.practice.answeredInRound += 1;
   course.practice.totalAnswered += 1;
   const answeredAt = new Date().toISOString();
@@ -505,62 +669,103 @@ async function submitAnswer() {
     practice: course.practice
   });
 
-  // 答题后自动滚动到操作按钮（即将自动跳转时跳过，避免对即将被替换的内容做无谓滚动造成抖动）
   if (!willAutoNext) {
     const actions = document.querySelector(".actions");
-    if (actions) {
-      actions.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    if (actions) actions.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  // 后台同步服务端（不阻塞 UI）
-  // 同步统计数据，不覆盖 currentQuestionId，防止答题后跳题
-  enqueuePracticeSync(() => api.submitAnswer(question.id, runtime.selectedAnswers))
+  const courseId = course.id;
+  const questionId = question.id;
+  const selectedAnswers = [...runtime.selectedAnswers];
+  const operationId = createOperationId();
+  const task = () => api.submitAnswer(courseId, questionId, selectedAnswers, operationId);
+
+  enqueuePracticeSync(task)
     .then((payload) => {
-      applyPracticeStats(payload);
+      if (!applyPracticeStats(payload)) return;
+      handleAnswerPayload(payload, rollbackStats);
       setupExamTimer();
     })
     .catch((error) => {
+      registerPracticeFailure("同步答题", task, (payload) => {
+        if (!applyPracticeStats(payload)) return;
+        handleAnswerPayload(payload, rollbackStats);
+      });
       showToast(`答题结果同步失败：${error.message || "请求失败"}`);
     });
 
-  // 答对自动下一题（基本无延迟，仅留极短时间显示对错反馈）
   if (willAutoNext) {
-    setTimeout(() => {
-      nextQuestion();
-    }, 200);
+    setTimeout(() => { nextQuestion(); }, 200);
   }
 }
 
-async function resetRound() {
-  if (!(await ensureActiveCourseSynced())) return;
-  stageLocalPracticeRound();
-  const result = await request(
-    () => enqueuePracticeSync(() => api.resetRound(runtime.practiceMode, activePracticeCount(), runtime.examTimeLimitMinutes)),
-    "重置本轮失败"
-  );
-  if (!result.ok) return;
-  applyPracticePayload(result.value);
+function applyNextPayload(payload) {
+  if (!applyPracticePayload(payload)) return;
   clearCurrentAnswer();
-  runtime.questionHistory = [];
+  runtime.questionHistory = activeCourse().practice.historyIds || [];
+  updatePracticeOnly();
+  updatePrevBtn();
+  setupExamTimer();
+}
+
+function applyResetPayload(payload) {
+  if (!applyPracticePayload(payload)) return;
+  clearCurrentAnswer();
+  runtime.questionHistory = activeCourse().practice.historyIds || [];
   renderApp();
   updatePrevBtn();
   setupExamTimer();
+}
+
+function applyFinishPayload(payload) {
+  if (!applyPracticePayload(payload)) return;
+  clearCurrentAnswer();
+  runtime.questionHistory = [];
+  examFinishFailed = false;
+  renderApp();
+  updatePrevBtn();
+}
+
+async function resetRound() {
+  if (runtime.pendingCourseId) return;
+  if (!(await ensureActiveCourseSynced())) return;
+  const course = activeCourse();
+  if (!course) return;
+  const courseId = course.id;
+  const mode = runtime.practiceMode;
+  const count = activePracticeCount();
+  const timeLimitMinutes = runtime.examTimeLimitMinutes;
+  const operationId = createOperationId();
+
+  stageLocalPracticeRound();
+  const task = () => api.resetRound(courseId, mode, count, timeLimitMinutes, operationId);
+  const result = await request(() => enqueuePracticeSync(task), "重置本轮失败");
+  if (!result.ok) {
+    registerPracticeFailure("重置本轮", task, applyResetPayload);
+    return;
+  }
+  applyResetPayload(result.value);
 }
 
 async function finishExam(timedOut = false) {
   if (!isExamMode()) return;
   if (runtime.finishingExam) return;
   runtime.finishingExam = true;
+  if (!timedOut) examFinishFailed = false;
   try {
     if (!(await ensureActiveCourseSynced())) return;
-    const result = await request(() => enqueuePracticeSync(() => api.finishExam(timedOut)), "结束模拟失败");
-    if (!result.ok) return;
-    applyPracticePayload(result.value);
-    clearCurrentAnswer();
-    runtime.questionHistory = [];
-    renderApp();
-    updatePrevBtn();
+    const course = activeCourse();
+    if (!course) return;
+    const courseId = course.id;
+    const operationId = createOperationId();
+    const task = () => api.finishExam(courseId, timedOut, operationId);
+    const result = await request(() => enqueuePracticeSync(task), "结束模拟失败");
+    if (!result.ok) {
+      if (timedOut) examFinishFailed = true;
+      registerPracticeFailure("结束模拟", task, applyFinishPayload);
+      return;
+    }
+    applyFinishPayload(result.value);
   } finally {
     runtime.finishingExam = false;
     setupExamTimer();
@@ -574,18 +779,8 @@ async function handleExamAction(event) {
   if (action === "review-wrong") {
     runtime.practiceMode = "exam-wrong";
     localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
-    if (!(await ensureActiveCourseSynced())) return;
-    const result = await request(
-      () => enqueuePracticeSync(() => api.resetRound("exam-wrong", runtime.practiceCount, runtime.examTimeLimitMinutes)),
-      "打开错题复盘失败"
-    );
-    if (!result.ok) return;
-    applyPracticePayload(result.value);
-    clearCurrentAnswer();
-    runtime.questionHistory = [];
-    renderApp();
-    updatePrevBtn();
-    setupExamTimer();
+    switchTab("practicePanel");
+    await resetRound();
     return;
   }
 
@@ -610,8 +805,9 @@ function setupExamTimer() {
   }
   updateExamTimerText();
   const course = activeCourse();
-  const exam = course.practice.exam;
-  if (!isExamMode(course.practice.mode) || !exam?.startedAt || exam.finishedAt) {
+  const practice = course?.practice;
+  const exam = practice?.exam;
+  if (!practice || !isExamMode(practice.mode) || !exam?.startedAt || exam.finishedAt) {
     toggleFinishExamButton(false);
     return;
   }
@@ -619,15 +815,16 @@ function setupExamTimer() {
   toggleFinishExamButton(true);
   runtime.examTimerId = setInterval(() => {
     const remaining = updateExamTimerText();
-    if (remaining <= 0) finishExam(true);
+    if (remaining <= 0 && !examFinishFailed) finishExam(true);
   }, 1000);
 }
 
 function updateExamTimerText() {
   const timer = $("#examTimer");
   const course = activeCourse();
-  const exam = course.practice.exam;
-  if (!timer || !isExamMode(course.practice.mode) || !exam?.startedAt || exam.finishedAt) return Infinity;
+  const practice = course?.practice;
+  const exam = practice?.exam;
+  if (!timer || !practice || !isExamMode(practice.mode) || !exam?.startedAt || exam.finishedAt) return Infinity;
 
   const remaining = remainingExamMs(exam);
   const seconds = Math.max(0, Math.ceil(remaining / 1000));
@@ -646,8 +843,8 @@ function remainingExamMs(exam) {
 }
 
 function toggleFinishExamButton(show) {
-  const btn = $("#finishExamBtn");
-  if (btn) btn.style.display = show ? "" : "none";
+  const button = $("#finishExamBtn");
+  if (button) button.style.display = show ? "" : "none";
 }
 
 async function handleReviewActions(event) {
@@ -659,16 +856,8 @@ async function handleReviewActions(event) {
     localStorage.setItem("quiz-platform-practice-mode", runtime.practiceMode);
     const modeRadio = document.querySelector("input[name='practiceMode'][value='wrong']");
     if (modeRadio) modeRadio.checked = true;
-    if (!(await ensureActiveCourseSynced())) return;
-    const result = await request(() => api.resetRound("wrong", runtime.practiceCount, runtime.examTimeLimitMinutes), "开始错题重做失败");
-    if (!result.ok) return;
-    runtime.state = result.value;
-    clearCurrentAnswer();
-    runtime.questionHistory = [];
     switchTab("practicePanel");
-    renderApp();
-    updatePrevBtn();
-    setupExamTimer();
+    await resetRound();
     return;
   }
 
@@ -687,9 +876,11 @@ async function deleteQuestion(event) {
   if (!(await ensureActiveCourseSynced())) return;
   const result = await request(() => api.deleteQuestion(id), "删除题目失败");
   if (!result.ok) return;
-  runtime.state = result.value;
+  if (!hydrateAndApplyState(result.value)) return;
   clearCurrentAnswer();
+  clearOptionOrder(id);
   renderApp();
+  updatePrevBtn();
 }
 
 function handleBankSearch(event) {
@@ -719,15 +910,20 @@ function handleBankToolbar(event) {
 }
 
 async function handleBookmarkClick(event) {
-  const btn = event.target.closest("[data-bookmark]");
-  if (!btn) return;
+  const button = event.target.closest("[data-bookmark]");
+  if (!button) return;
 
-  const questionId = btn.dataset.bookmark;
+  const questionId = button.dataset.bookmark;
+  const course = activeCourse();
+  if (!course) return;
   if (!(await ensureActiveCourseSynced())) return;
-  const result = await request(() => api.bookmarkQuestion(questionId), "收藏状态保存失败");
+  const courseId = course.id;
+  const operationId = createOperationId();
+  const result = await request(() => api.bookmarkQuestion(courseId, questionId, operationId), "收藏状态保存失败");
   if (!result.ok) return;
-  applyQuestionPayload(result.value);
-  renderApp();
+  if (!applyQuestionPayload(result.value)) return;
+  if ($("#practicePanel")?.classList.contains("active")) updatePracticeOnly();
+  if ($("#bankPanel")?.classList.contains("active")) updateBankListOnly();
 }
 
 function handleBankActions(event) {
@@ -741,11 +937,8 @@ function handleBankActions(event) {
   }
 
   if (target.dataset.cancelForm) {
-    if (target.dataset.cancelForm === "create") {
-      runtime.creatingQuestion = false;
-    } else {
-      runtime.editingQuestionId = null;
-    }
+    if (target.dataset.cancelForm === "create") runtime.creatingQuestion = false;
+    else runtime.editingQuestionId = null;
     renderApp();
     return;
   }
@@ -762,7 +955,6 @@ function handleBankActions(event) {
 
   if (target.classList.contains("form-remove-option")) {
     removeOptionRow(target);
-    return;
   }
 }
 
@@ -778,7 +970,6 @@ function handleBankFormInput(event) {
   refreshOptionCheckboxes(form.dataset.formId, options);
 }
 
-// 题目类型切换
 document.addEventListener("change", (event) => {
   if (event.target.classList.contains("form-type")) {
     const form = event.target.closest(".bank-form");
@@ -803,7 +994,7 @@ function getFormData(formId) {
 
   if (type === "fill-blank") {
     const answerText = form.querySelector(".form-fill-blank-answer").value.trim();
-    const answer = answerText.split(/[；;]/).map((s) => s.trim()).filter(Boolean);
+    const answer = answerText.split(/[；;]/).map((value) => value.trim()).filter(Boolean);
     return { type: "fill-blank", stem, options: [], answer, explanation, memoryTip };
   }
 
@@ -816,7 +1007,7 @@ function getFormData(formId) {
   });
 
   const answerCheckboxes = form.querySelectorAll(".form-answers input[type='checkbox']:checked");
-  const answer = Array.from(answerCheckboxes).map((cb) => cb.value);
+  const answer = Array.from(answerCheckboxes).map((checkbox) => checkbox.value);
 
   return { type: "choice", stem, options, answer, explanation, memoryTip };
 }
@@ -829,13 +1020,13 @@ function refreshOptionCheckboxes(formId, options) {
   if (!answersDiv) return;
 
   const checked = Array.from(answersDiv.querySelectorAll("input:checked"));
-  const checkedIndexes = new Set(checked.map((cb) => cb.dataset.optionIndex).filter(Boolean));
-  const checkedValues = checked.map((cb) => cb.value);
+  const checkedIndexes = new Set(checked.map((checkbox) => checkbox.dataset.optionIndex).filter(Boolean));
+  const checkedValues = checked.map((checkbox) => checkbox.value);
 
-  answersDiv.innerHTML = options.map((opt, index) => `
+  answersDiv.innerHTML = options.map((option, index) => `
     <label class="form-answer-check">
-      <input type="checkbox" value="${escapeHtml(opt.text)}" data-option-index="${index}" ${checkedIndexes.has(String(index)) || checkedValues.some((value) => normalizeChoiceText(value) === normalizeChoiceText(opt.text)) ? "checked" : ""}>
-      <span>${escapeHtml(opt.key)}. ${escapeHtml(opt.text)}</span>
+      <input type="checkbox" value="${escapeHtml(option.text)}" data-option-index="${index}" ${checkedIndexes.has(String(index)) || checkedValues.some((value) => normalizeChoiceText(value) === normalizeChoiceText(option.text)) ? "checked" : ""}>
+      <span>${escapeHtml(option.key)}. ${escapeHtml(option.text)}</span>
     </label>
   `).join("");
 }
@@ -858,9 +1049,9 @@ function addOptionRow(formId) {
   optionsDiv.appendChild(row);
 
   const options = [];
-  optionsDiv.querySelectorAll(".form-option-row").forEach((r) => {
-    const key = r.querySelector(".form-option-key").value.trim().toUpperCase();
-    const text = r.querySelector(".form-option-text").value.trim();
+  optionsDiv.querySelectorAll(".form-option-row").forEach((item) => {
+    const key = item.querySelector(".form-option-key").value.trim().toUpperCase();
+    const text = item.querySelector(".form-option-text").value.trim();
     if (key) options.push({ key, text });
   });
   refreshOptionCheckboxes(formId, options);
@@ -879,9 +1070,9 @@ function removeOptionRow(target) {
   row.remove();
 
   const options = [];
-  optionsDiv.querySelectorAll(".form-option-row").forEach((r) => {
-    const key = r.querySelector(".form-option-key").value.trim().toUpperCase();
-    const text = r.querySelector(".form-option-text").value.trim();
+  optionsDiv.querySelectorAll(".form-option-row").forEach((item) => {
+    const key = item.querySelector(".form-option-key").value.trim().toUpperCase();
+    const text = item.querySelector(".form-option-text").value.trim();
     if (key) options.push({ key, text });
   });
   refreshOptionCheckboxes(formId, options);
@@ -903,14 +1094,16 @@ async function saveQuestionForm(formId) {
   if (formId === "create") {
     const result = await request(() => api.addQuestions([data]), "创建题目失败");
     if (!result.ok) return;
-    runtime.state = result.value.state;
+    if (!hydrateAndApplyState(result.value)) return;
     runtime.creatingQuestion = false;
+    clearAllOptionOrders();
   } else {
     const questionId = formId.replace("edit-", "");
     const result = await request(() => api.updateQuestion(questionId, data), "保存题目失败");
     if (!result.ok) return;
-    runtime.state = result.value;
+    if (!hydrateAndApplyState(result.value)) return;
     runtime.editingQuestionId = null;
+    clearOptionOrder(questionId);
   }
 
   renderApp();
@@ -933,10 +1126,12 @@ async function recognizeImage() {
 
     if (!(await ensureActiveCourseSynced())) return;
     const result = await api.addQuestions(questions);
-    runtime.state = result.state;
+    if (!hydrateAndApplyState(result)) return;
     $("#status").textContent = `AI 导入完成：识别 ${result.importResult.total} 道，成功 ${result.importResult.accepted.length} 道，失败 ${result.importResult.rejected.length} 道。`;
     renderImportResult(result.importResult, "AI 导入");
+    clearAllOptionOrders();
     renderApp();
+    updatePrevBtn();
   } catch (error) {
     $("#status").textContent = error.message;
     $("#importResult").innerHTML = `<div class="import-summary">AI 导入失败：${escapeHtml(error.message || "未知错误")}</div>`;
@@ -945,16 +1140,16 @@ async function recognizeImage() {
 
 function bindKeyboardShortcuts() {
   document.addEventListener("keydown", (event) => {
-    // 如果用户正在输入框中输入，不触发快捷键
+    if (event.isComposing) return;
+    if (!$("#practicePanel")?.classList.contains("active")) return;
     const tagName = event.target.tagName;
-    if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
+    if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || tagName === "BUTTON") return;
+    if (event.target.isContentEditable) return;
 
     const key = event.key.toUpperCase();
-
-    // 单选题/多选题快捷键：按当前题目的选项字母（A–H）选择
     const question = currentQuestion();
     if (/^[A-Z]$/.test(key) && question && !runtime.answerFeedback) {
-      const option = question.options.find((opt) => String(opt.key || "").toUpperCase() === key);
+      const option = question.options.find((item) => String(item.key || "").toUpperCase() === key);
       if (option) {
         const isMulti = question.answer.length > 1;
         const input = document.querySelector(`input[name='answer'][data-key='${key}']`);
@@ -965,12 +1160,10 @@ function bindKeyboardShortcuts() {
           if (input.checked) {
             runtime.selectedAnswers = getChoiceAnswerTexts(question, [...runtime.selectedAnswers, option.text]);
           } else {
-            runtime.selectedAnswers = runtime.selectedAnswers.filter((v) => normalizeChoiceText(v) !== normalizeChoiceText(option.text));
+            runtime.selectedAnswers = runtime.selectedAnswers.filter((value) => normalizeChoiceText(value) !== normalizeChoiceText(option.text));
           }
         } else {
-          document.querySelectorAll("input[name='answer']").forEach((el) => {
-            el.checked = false;
-          });
+          document.querySelectorAll("input[name='answer']").forEach((element) => { element.checked = false; });
           input.checked = true;
           runtime.selectedAnswers = getChoiceAnswerTexts(question, [option.text]);
         }
@@ -978,21 +1171,18 @@ function bindKeyboardShortcuts() {
       }
     }
 
-    // Enter 提交答案
     if (event.key === "Enter") {
       event.preventDefault();
       submitAnswer();
       return;
     }
 
-    // 右箭头或空格 下一题
     if (event.key === "ArrowRight" || event.key === " ") {
       event.preventDefault();
       nextQuestion();
       return;
     }
 
-    // 左箭头 上一题
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       prevQuestion();
@@ -1012,38 +1202,59 @@ function setupStickyActions() {
   observer.observe(card);
 }
 
-try {
-  runtime.state = await api.state();
-  bind();
-  setupStickyActions();
-
-  // 从服务端获取状态（数据库或 JSON 文件）
-  const course = activeCourse();
-
-  // 恢复答题反馈
-  if (course.practice.lastAnswer) {
-    runtime.answerFeedback = course.practice.lastAnswer;
-    runtime.selectedAnswers = course.practice.lastAnswer.selectedAnswers || [];
-  }
-
-  // 初始化刷题模式 UI
-  runtime.practiceMode = course.practice.mode || runtime.practiceMode;
-  const modeRadio = document.querySelector(`input[name='practiceMode'][value='${runtime.practiceMode}']`);
-  if (modeRadio) modeRadio.checked = true;
-  const countInput = document.querySelector("#practiceCountInput");
-  const countHint = document.querySelector("#practiceCountHint");
-  if (countInput) {
-    runtime.practiceCount = course.practice.count || runtime.practiceCount;
-    runtime.examCount = course.practice.mode === "exam" ? course.practice.count || runtime.examCount : runtime.examCount;
-  }
-  if (course.practice.exam?.timeLimitMinutes) runtime.examTimeLimitMinutes = course.practice.exam.timeLimitMinutes;
-  syncPracticeInputs();
-
-  // 初始化键盘快捷键
-  bindKeyboardShortcuts();
-
-  renderApp();
-  setupExamTimer();
-} catch (err) {
-  document.querySelector(".app").innerHTML = `<div style="padding:40px;color:red;font-size:18px;"><h2>页面加载出错</h2><pre>${escapeHtml(err.message)}\n${escapeHtml(err.stack)}</pre><p>请截图发给开发者。</p><p><a href="/national-security.html">打开国家安全教育静态题库</a></p></div>`;
+function showBootError(error) {
+  showAppStatus(`题库加载失败：${error.message || "请求失败"}。Render 免费实例首次启动通常需要 30 到 60 秒。`, {
+    tone: "error",
+    action: { label: "重新加载", onClick: () => { boot().catch(() => {}); } }
+  });
 }
+
+async function boot() {
+  if (bootPromise) return bootPromise;
+  bootPromise = (async () => {
+    showAppStatus("正在加载题库，首次打开可能需要约 30 秒…");
+    const payload = await api.bootstrap();
+    runtime.revision = Number(payload.revision) || 0;
+    runtime.state = hydrateStatePayload(payload);
+    const course = activeCourse();
+    if (!course) throw new Error("题库中没有课程");
+
+    runtime.practiceMode = course.practice.mode || runtime.practiceMode;
+    runtime.practiceCount = course.practice.count || runtime.practiceCount;
+    if (course.practice.mode === "exam") {
+      runtime.examCount = course.practice.count || runtime.examCount;
+    }
+    if (course.practice.exam?.timeLimitMinutes) {
+      runtime.examTimeLimitMinutes = course.practice.exam.timeLimitMinutes;
+    }
+    runtime.questionHistory = course.practice.historyIds || [];
+
+    if (course.practice.lastAnswer) {
+      runtime.answerFeedback = course.practice.lastAnswer;
+      runtime.selectedAnswers = course.practice.lastAnswer.selectedAnswers || [];
+    }
+
+    if (!booted) {
+      bind();
+      setupStickyActions();
+      bindKeyboardShortcuts();
+      booted = true;
+    }
+    syncPracticeInputs();
+    hideAppStatus();
+    renderApp();
+    updatePrevBtn();
+    setupExamTimer();
+  })();
+
+  try {
+    await bootPromise;
+  } catch (error) {
+    showBootError(error);
+    throw error;
+  } finally {
+    bootPromise = null;
+  }
+}
+
+boot().catch(() => {});

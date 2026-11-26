@@ -6,6 +6,9 @@ export function examQuestionTotal(practice = {}, fallbackTotal = 0) {
 }
 
 export function roundQuestionTotal(practice = {}, fallbackTotal = 0) {
+  const fixed = Number(practice.roundTotal) || 0;
+  if (fixed > 0) return fixed;
+
   const answered = Number(practice.answeredInRound) || 0;
   const remaining = Array.isArray(practice.remainingIds) ? practice.remainingIds.length : 0;
   const currentSubmitted = practice.lastAnswer?.questionId && practice.lastAnswer.questionId === practice.currentQuestionId;
@@ -39,6 +42,10 @@ export function shouldAutoNextAfterSubmit({ correct, autoNext, practice }) {
   return Boolean(correct && autoNext && hasNextQuestionInRound(practice));
 }
 
+export function isQuestionAnsweredInRound(practice = {}, questionId) {
+  return Boolean(questionId && Array.isArray(practice.answeredIds) && practice.answeredIds.includes(questionId));
+}
+
 export function isPracticeRoundComplete(practice = {}, fallbackTotal = 0) {
   const total = roundQuestionTotal(practice, fallbackTotal);
   if (total <= 0) return false;
@@ -61,6 +68,9 @@ export function applyLocalPracticeConfig(practice = {}, { mode = "all", count = 
   practice.correctInRound = 0;
   practice.currentQuestionId = null;
   practice.lastAnswer = null;
+  practice.roundTotal = 0;
+  practice.answeredIds = [];
+  practice.historyIds = [];
 
   if (mode === "exam" || mode === "exam-wrong") {
     practice.exam = {

@@ -366,12 +366,26 @@ function emptyPractice() {
     lastAnswer: null,
     mode: "all",
     count: 0,
+    roundTotal: 0,
+    answeredIds: [],
+    historyIds: [],
+    recentOperationIds: [],
     exam: emptyExam()
   };
 }
 
 function normalizePractice(practice = {}) {
   const base = { ...emptyPractice(), ...(practice || {}) };
+  const answeredIds = Array.isArray(base.answeredIds) ? base.answeredIds.map((item) => String(item)) : [];
+  if (!answeredIds.length && base.lastAnswer?.questionId) answeredIds.push(String(base.lastAnswer.questionId));
+  const examAnswers = Array.isArray(base.exam?.answers) ? base.exam.answers : [];
+  if (base.mode === "exam" || base.mode === "exam-wrong") {
+    for (const answer of examAnswers) {
+      if (answer?.questionId && !answeredIds.includes(String(answer.questionId))) {
+        answeredIds.push(String(answer.questionId));
+      }
+    }
+  }
   return {
     ...base,
     remainingIds: Array.isArray(base.remainingIds) ? base.remainingIds : [],
@@ -383,11 +397,15 @@ function normalizePractice(practice = {}) {
     lastAnswer: base.lastAnswer || null,
     mode: base.mode || "all",
     count: Number(base.count) || 0,
+    roundTotal: Number(base.roundTotal) || 0,
+    answeredIds,
+    historyIds: Array.isArray(base.historyIds) ? base.historyIds : [],
+    recentOperationIds: Array.isArray(base.recentOperationIds) ? base.recentOperationIds : [],
     exam: {
       ...emptyExam(),
       ...(base.exam || {}),
       questionIds: Array.isArray(base.exam?.questionIds) ? base.exam.questionIds : [],
-      answers: Array.isArray(base.exam?.answers) ? base.exam.answers : [],
+      answers: examAnswers,
       lastWrongIds: Array.isArray(base.exam?.lastWrongIds) ? base.exam.lastWrongIds : [],
       lastSummary: base.exam?.lastSummary || null
     }
@@ -1453,6 +1471,7 @@ function clientApp() {
   let activeProgressSignature = "";
 
   const settings = loadSettings();
+  const optionOrders = new Map();
   const runtime = {
     state: hydrateState(),
     selectedAnswers: [],
@@ -1611,20 +1630,68 @@ function clientApp() {
   function selectProgressForHydration() {
     const local = readJson(STORAGE_KEY, null);
     const hasEmbedded = embeddedProgressSignature && hasProgressData(embedded.initialProgress);
-    if (local && typeof local === "object") {
-      if (hasProgressData(local) && !isCompatibleProgressHash(local.bankHash, local.coreHash)) {
+    if (local && typeof local === "object" && hasProgressData(local)) {
+      if (!isCompatibleProgressHash(local.bankHash, local.coreHash)) {
+        const migrated = mergeProgressForCurrentBank(local);
+        if (migrated) {
+          activeProgressSignature = embeddedProgressSignature;
+          return migrated;
+        }
         activeProgressSignature = hasEmbedded ? embeddedProgressSignature : "";
         return hasEmbedded ? withProgressSignature(embedded.initialProgress) : {};
       }
-      if (hasEmbedded && local.embeddedProgressSignature !== embeddedProgressSignature) {
-        activeProgressSignature = embeddedProgressSignature;
-        return withProgressSignature(embedded.initialProgress);
-      }
-      activeProgressSignature = local.embeddedProgressSignature || "";
+      activeProgressSignature = embeddedProgressSignature || local.embeddedProgressSignature || "";
       return local;
     }
     activeProgressSignature = hasEmbedded ? embeddedProgressSignature : "";
     return hasEmbedded ? withProgressSignature(embedded.initialProgress) : {};
+  }
+
+  function mergeProgressForCurrentBank(local) {
+    const courseIds = new Set(baseState.courses.map((course) => course.id));
+    const questionIds = new Set(baseState.courses.flatMap((course) => (course.questions || []).map((question) => question.id)));
+    const practices = {};
+
+    for (const course of baseState.courses) {
+      const saved = local.practices?.[course.id];
+      if (!saved) continue;
+      const practice = normalizePractice(saved);
+      practice.remainingIds = practice.remainingIds.filter((id) => questionIds.has(id));
+      practice.answeredIds = practice.answeredIds.filter((id) => questionIds.has(id));
+      practice.historyIds = practice.historyIds.filter((id) => questionIds.has(id));
+      if (practice.currentQuestionId && !questionIds.has(practice.currentQuestionId)) {
+        practice.currentQuestionId = null;
+      }
+      practice.exam.questionIds = practice.exam.questionIds.filter((id) => questionIds.has(id));
+      practice.exam.lastWrongIds = practice.exam.lastWrongIds.filter((id) => questionIds.has(id));
+      practice.exam.answers = practice.exam.answers.filter((answer) => questionIds.has(answer?.questionId));
+      practices[course.id] = practice;
+    }
+
+    const questionProgress = {};
+    let matched = 0;
+    for (const [questionId, patch] of Object.entries(local.questionProgress || {})) {
+      if (!questionIds.has(questionId)) continue;
+      questionProgress[questionId] = {
+        wrongCount: Number(patch?.wrongCount) || 0,
+        correctCount: Number(patch?.correctCount) || 0,
+        bookmarked: Boolean(patch?.bookmarked),
+        review: normalizeReviewState(patch?.review)
+      };
+      matched += 1;
+    }
+
+    if (!Object.keys(practices).length && !matched) return null;
+    return {
+      version: 1,
+      bankHash: embedded.metadata.questionBankSha256,
+      coreHash: embedded.metadata.sourceQuestionCoreSha256 || "",
+      savedAt: new Date().toISOString(),
+      activeCourseId: courseIds.has(local.activeCourseId) ? local.activeCourseId : embedded.activeCourseId,
+      practices,
+      questionProgress,
+      embeddedProgressSignature
+    };
   }
 
   function hasProgressData(progress) {
@@ -1716,6 +1783,16 @@ function clientApp() {
   }
 
   function normalizePractice(practice = {}) {
+    const answeredIds = Array.isArray(practice.answeredIds) ? practice.answeredIds.map((item) => String(item)) : [];
+    if (!answeredIds.length && practice.lastAnswer?.questionId) answeredIds.push(String(practice.lastAnswer.questionId));
+    const examAnswers = Array.isArray(practice.exam?.answers) ? practice.exam.answers : [];
+    if (practice.mode === "exam" || practice.mode === "exam-wrong") {
+      for (const answer of examAnswers) {
+        if (answer?.questionId && !answeredIds.includes(String(answer.questionId))) {
+          answeredIds.push(String(answer.questionId));
+        }
+      }
+    }
     return {
       roundNo: Number(practice.roundNo) || 1,
       remainingIds: Array.isArray(practice.remainingIds) ? practice.remainingIds : [],
@@ -1727,12 +1804,16 @@ function clientApp() {
       lastAnswer: practice.lastAnswer || null,
       mode: practice.mode || "all",
       count: Number(practice.count) || 0,
+      roundTotal: Number(practice.roundTotal) || 0,
+      answeredIds,
+      historyIds: Array.isArray(practice.historyIds) ? practice.historyIds.map((item) => String(item)) : [],
+      recentOperationIds: Array.isArray(practice.recentOperationIds) ? practice.recentOperationIds.map((item) => String(item)) : [],
       exam: {
         timeLimitMinutes: Number(practice.exam?.timeLimitMinutes) || 20,
         startedAt: practice.exam?.startedAt || "",
         finishedAt: practice.exam?.finishedAt || "",
         questionIds: Array.isArray(practice.exam?.questionIds) ? practice.exam.questionIds : [],
-        answers: Array.isArray(practice.exam?.answers) ? practice.exam.answers : [],
+        answers: examAnswers,
         lastWrongIds: Array.isArray(practice.exam?.lastWrongIds) ? practice.exam.lastWrongIds : [],
         lastSummary: practice.exam?.lastSummary || null
       }
@@ -1765,6 +1846,19 @@ function clientApp() {
       [copy[i], copy[j]] = [copy[j], copy[i]];
     }
     return copy;
+  }
+
+  function orderedOptions(question) {
+    if (!Array.isArray(question.options)) return [];
+    const cached = optionOrders.get(question.id);
+    if (cached
+      && cached.length === question.options.length
+      && cached.every((option) => question.options.includes(option))) {
+      return cached;
+    }
+    const shuffled = shuffle(question.options);
+    optionOrders.set(question.id, shuffled);
+    return shuffled;
   }
 
   function isExamMode(mode = runtime.practiceMode) {
@@ -1831,6 +1925,9 @@ function clientApp() {
     practice.correctInRound = 0;
     practice.currentQuestionId = null;
     practice.lastAnswer = null;
+    practice.roundTotal = ids.length;
+    practice.answeredIds = [];
+    practice.historyIds = [];
     if (incrementRound) practice.roundNo += practice.totalAnswered ? 1 : 0;
 
     if (isExamMode(input.mode)) {
@@ -1856,6 +1953,9 @@ function clientApp() {
     course.practice.correctInRound = 0;
     course.practice.currentQuestionId = null;
     course.practice.lastAnswer = null;
+    course.practice.roundTotal = 0;
+    course.practice.answeredIds = [];
+    course.practice.historyIds = [];
     if (isExamMode(runtime.practiceMode)) {
       course.practice.exam = {
         timeLimitMinutes: runtime.examTimeLimitMinutes,
@@ -1958,6 +2058,14 @@ function clientApp() {
     question.review = review;
   }
 
+  function ensureRoundTotal(practice) {
+    if (Number(practice.roundTotal) > 0) return;
+    const currentSubmitted = practice.lastAnswer?.questionId && practice.lastAnswer.questionId === practice.currentQuestionId;
+    practice.roundTotal = (Number(practice.answeredInRound) || 0)
+      + (Array.isArray(practice.remainingIds) ? practice.remainingIds.length : 0)
+      + (practice.currentQuestionId && !currentSubmitted ? 1 : 0);
+  }
+
   function nextQuestion() {
     const course = activeCourse();
     const practice = course.practice;
@@ -1969,16 +2077,22 @@ function clientApp() {
       return;
     }
 
+    let startedNewRound = false;
     if (!practice.remainingIds.length && shouldAutoStartRound(practice, mode)) {
       startPracticeRound(course, {
         mode,
         count: mode === "exam" ? runtime.examCount : activePracticeCount(),
         timeLimitMinutes: runtime.examTimeLimitMinutes
       }, { incrementRound: true });
+      startedNewRound = true;
     }
-    if (prevId) runtime.questionHistory.push(prevId);
+    if (!startedNewRound) {
+      ensureRoundTotal(practice);
+      if (prevId) practice.historyIds.push(prevId);
+    }
     practice.currentQuestionId = practice.remainingIds.shift() || null;
     practice.lastAnswer = null;
+    runtime.questionHistory = practice.historyIds;
     clearCurrentAnswer();
     persistState();
     renderPracticeOnly();
@@ -1987,12 +2101,14 @@ function clientApp() {
   }
 
   function prevQuestion() {
-    if (!runtime.questionHistory.length) return;
     const course = activeCourse();
-    const prevId = runtime.questionHistory.pop();
-    if (course.practice.currentQuestionId) course.practice.remainingIds.unshift(course.practice.currentQuestionId);
-    course.practice.currentQuestionId = prevId;
-    course.practice.lastAnswer = null;
+    const practice = course.practice;
+    if (!practice.historyIds?.length) return;
+    const prevId = practice.historyIds.pop();
+    if (practice.currentQuestionId) practice.remainingIds.unshift(practice.currentQuestionId);
+    practice.currentQuestionId = prevId;
+    practice.lastAnswer = null;
+    runtime.questionHistory = practice.historyIds;
     clearCurrentAnswer();
     persistState();
     renderPracticeOnly();
@@ -2005,8 +2121,9 @@ function clientApp() {
       alert("请先点击“开始刷题”。");
       return;
     }
-    if (runtime.answerFeedback?.questionId === question.id) {
-      alert("这道题已经提交过。");
+    const active = activeCourse();
+    if (active.practice.answeredIds?.includes(question.id) || runtime.answerFeedback?.questionId === question.id) {
+      alert("这道题本轮已经作答。");
       return;
     }
 
@@ -2056,6 +2173,7 @@ function clientApp() {
     }
     updateQuestionReview(question, { correct, selectedAnswers: runtime.selectedAnswers, answeredAt });
     course.practice.lastAnswer = answer;
+    course.practice.answeredIds.push(question.id);
     recordExamAnswer(course.practice, answer);
     persistState();
     renderPracticeOnly();
@@ -2187,9 +2305,9 @@ function clientApp() {
   function renderApp() {
     renderCourseToolbar();
     renderPractice(activeCourse());
-    renderReview(activeCourse());
-    renderBank(activeCourse());
-    renderDataPanel();
+    if ($("#reviewPanel")?.classList.contains("active")) renderReview(activeCourse());
+    if ($("#bankPanel")?.classList.contains("active")) renderBank(activeCourse());
+    if ($("#dataPanel")?.classList.contains("active")) renderDataPanel();
   }
 
   function renderPracticeOnly() {
@@ -2301,10 +2419,12 @@ function clientApp() {
   function updatePracticeActions({ practice, question, mode, complete }) {
     const submitBtn = $("#submitBtn");
     const nextBtn = $("#nextBtn");
-    const submitted = question && runtime.answerFeedback?.questionId === question.id;
+    const hasFeedback = question && runtime.answerFeedback?.questionId === question.id;
+    const answered = question && practice.answeredIds?.includes(question.id);
+    const submitted = Boolean(hasFeedback || answered);
     const finishedExam = isExamMode(mode) && practice.exam?.finishedAt;
-    submitBtn.disabled = !question || Boolean(submitted) || Boolean(finishedExam);
-    submitBtn.textContent = submitted ? "已提交" : "提交答案";
+    submitBtn.disabled = !question || submitted || Boolean(finishedExam);
+    submitBtn.textContent = hasFeedback ? "已提交" : answered ? "本轮已作答" : "提交答案";
     nextBtn.style.display = finishedExam ? "none" : "";
     if (!question && !isPracticeRoundStarted(practice)) nextBtn.textContent = mode === "exam" ? "开始模拟" : "开始刷题";
     else if (complete) nextBtn.textContent = isExamMode(mode) ? "结束模拟" : "开始下一轮";
@@ -2324,7 +2444,8 @@ function clientApp() {
   function renderChoicePractice(question) {
     const isMulti = question.answer.length > 1;
     const inputType = isMulti ? "checkbox" : "radio";
-    const options = settings.shuffleOptions ? shuffle(question.options) : question.options;
+    const options = settings.shuffleOptions ? orderedOptions(question) : question.options;
+    const answered = activeCourse().practice.answeredIds?.includes(question.id);
     const wrongTag = question.wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${question.wrongCount} 次</span>` : "";
     $("#quizCard").innerHTML = `
       <div class="quiz-card-header">
@@ -2334,7 +2455,7 @@ function clientApp() {
       <div class="option-list">
         ${options.map((option) => `
           <label class="option ${optionClass(question, option)}">
-            <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback ? "disabled" : ""}>
+            <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback || answered ? "disabled" : ""}>
             <span><b>${escapeHtml(option.key)}.</b> ${escapeHtml(option.text)}</span>
           </label>
         `).join("")}
@@ -2357,7 +2478,8 @@ function clientApp() {
 
   function renderFillBlankPractice(question) {
     const feedback = runtime.answerFeedback;
-    const hasSubmitted = feedback && feedback.questionId === question.id;
+    const hasSubmitted = (feedback && feedback.questionId === question.id)
+      || activeCourse().practice.answeredIds?.includes(question.id);
     const blankCount = question.answer.length;
     const inputs = Array.from({ length: blankCount }, (_, index) => (
       `<input type="text" class="fill-blank-input" data-index="${index}" placeholder="第${index + 1}个空" value="${escapeHtml(runtime.selectedAnswers[index] || "")}" ${hasSubmitted ? "disabled" : ""}>`
@@ -2585,7 +2707,8 @@ function clientApp() {
   }
 
   function updatePrevBtn() {
-    $("#prevBtn").style.display = runtime.questionHistory.length ? "" : "none";
+    const practice = activeCourse().practice;
+    $("#prevBtn").style.display = practice.historyIds?.length ? "" : "none";
   }
 
   function bind() {
@@ -2619,7 +2742,7 @@ function clientApp() {
     $("#showAnswerToggle").addEventListener("change", (event) => { settings.showAnswer = event.target.checked; saveSettings(); renderPracticeOnly(); });
     $("#showExplanationToggle").addEventListener("change", (event) => { settings.showExplanation = event.target.checked; saveSettings(); renderPracticeOnly(); });
     $("#autoNextToggle").addEventListener("change", (event) => { settings.autoNext = event.target.checked; saveSettings(); });
-    $("#shuffleOptionsToggle").addEventListener("change", (event) => { settings.shuffleOptions = event.target.checked; saveSettings(); renderPracticeOnly(); });
+    $("#shuffleOptionsToggle").addEventListener("change", (event) => { settings.shuffleOptions = event.target.checked; saveSettings(); optionOrders.clear(); renderPracticeOnly(); });
 
     document.querySelectorAll("input[name='practiceMode']").forEach((radio) => {
       radio.addEventListener("change", (event) => {
@@ -2801,7 +2924,7 @@ function clientApp() {
     link.href = url;
     link.download = `${embedded.metadata.progressFileName || "刷题进度"}-${new Date().toISOString().slice(0, 10)}.json`;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   async function applyImportedProgress(payload) {
@@ -2856,8 +2979,11 @@ function clientApp() {
 
   function bindKeyboardShortcuts() {
     document.addEventListener("keydown", (event) => {
+      if (event.isComposing) return;
+      if (!$("#practicePanel")?.classList.contains("active")) return;
       const tagName = event.target.tagName;
-      if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT") return;
+      if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || tagName === "BUTTON") return;
+      if (event.target.isContentEditable) return;
       const key = event.key.toUpperCase();
       if (/^[A-Z]$/.test(key)) {
         const question = currentQuestion();

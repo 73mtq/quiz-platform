@@ -9,6 +9,17 @@
   <title>刷题平台 · 课程题库与随机练习</title>
   <link rel="icon" type="image/svg+xml" href="./assets/pixel/cards.svg">
   <link rel="stylesheet" href="./src/styles.css">
+  <link rel="modulepreload" href="./src/api/client.js">
+  <link rel="modulepreload" href="./src/state/appState.js">
+  <link rel="modulepreload" href="./src/state/practiceState.js">
+  <link rel="modulepreload" href="./src/ui/render.js">
+  <link rel="modulepreload" href="./src/ui/optionOrder.js">
+  <link rel="modulepreload" href="./src/utils/answers.js">
+  <link rel="modulepreload" href="./src/utils/format.js">
+  <link rel="modulepreload" href="./src/utils/parser.js">
+  <link rel="modulepreload" href="./src/utils/practiceFlow.js">
+  <link rel="modulepreload" href="./src/utils/review.js">
+  <link rel="modulepreload" href="./src/data/reviewTaxonomy.js">
 </head>
 <body>
   <main class="app">
@@ -29,6 +40,8 @@
         </div>
       </div>
     </header>
+
+    <div id="appStatus" class="app-status" role="status" aria-live="polite" hidden></div>
 
     <section class="toolbar" aria-label="课程管理">
       <label class="field">
@@ -51,6 +64,8 @@
       <button data-tab="reviewPanel">复习</button>
       <button data-tab="bankPanel">题库</button>
     </nav>
+
+    <div id="syncStatus" class="sync-status" role="status" aria-live="polite" hidden></div>
 
     <section id="importPanel" class="panel active">
       <h2>导入题目</h2>

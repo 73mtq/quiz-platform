@@ -2,29 +2,36 @@
 
 ## OVERVIEW
 
-单页应用（SPA），原生 JavaScript（无框架、无构建、无打包）。`index.html` 加载 `src/main.js` 作为 ES module。四个 Tab：导入 / 刷题 / 复习 / 题库。状态以服务端为权威；前端做乐观更新（切题、答题立即本地生效，后台同步统计字段）。所有 `api.*` 失败都会显示到全局提示条（`#toast`）。
+单页应用（SPA），原生 JavaScript（无框架、无构建、无打包）。`index.html` 加载 `src/main.js` 作为 ES module。四个 Tab：导入 / 刷题 / 复习 / 题库。状态以服务端为权威；前端做乐观更新（切题、答题立即本地生效，后台同步统计字段）。首屏通过 `/api/bootstrap` 只加载当前课程，切换课程时按需加载目标课程。
 
 ## STRUCTURE
 
 ```
 frontend/
-├── index.html          # 118 行：四个 panel + 工具栏 + 提示条容器
+├── index.html          # 四个 panel + 工具栏 + 加载/同步提示 + modulepreload
 ├── src/
-    ├── main.js         # 996 行：controller —— 事件绑定 + 业务函数 + 错误提示
-    ├── styles.css      # 1619 行：全部样式（主题变量、动画、提示条）
-    ├── api/client.js   # 47 行：单一 request() + 14 个端点包装
-    ├── state/appState.js # 45 行：settings (localStorage) + runtime (内存)
-    ├── ui/render.js    # 760 行：renderApp / renderPractice / renderReview / renderBank
+    ├── main.js         # controller：启动、事件绑定、业务、练习队列、提示
+    ├── styles.css      # 全部样式（主题变量、动画、提示条、加载状态）
+    ├── api/client.js   # request() + 超时/重试 + 端点包装
+    ├── state/
+    │   ├── appState.js       # settings (localStorage) + runtime (内存)
+    │   └── practiceState.js  # 完整/紧凑状态 hydrate 与练习补丁合并
+    ├── ui/
+    │   ├── render.js         # renderApp / renderPractice / renderReview / renderBank
+    │   └── optionOrder.js    # 选项顺序缓存
     ├── data/
-    │   └── reviewTaxonomy.js # 85 行：复习分析的领域关键词与题型规则
+    │   └── reviewTaxonomy.js # 复习分析的领域关键词与题型规则
     └── utils/
-        ├── answers.js      # 53 行：选项文本解析与选择/填空判定
-        ├── format.js       # 22 行：escapeHtml / rate / readFileAsDataUrl
-        ├── parser.js       # 142 行：parseQuestions —— 粘贴文本的正则式行解析
-        ├── practiceFlow.js # 86 行：轮次进度计算与自动下一题判定
-        └── review.js       # 193 行：复习分析与复习进度更新
+        ├── answers.js      # 选项文本解析与选择/填空判定
+        ├── format.js       # escapeHtml / rate / readFileAsDataUrl
+        ├── parser.js       # parseQuestions —— 粘贴文本的正则式行解析
+        ├── practiceFlow.js # 轮次进度、roundTotal、answeredIds
+        └── review.js       # 复习分析与复习进度更新
 └── test/
-    └── review.test.js  # 60 行：复习分析单元测试（node --test）
+    ├── review.test.js
+    ├── practice-state.test.js
+    ├── practice-flow.test.js
+    └── option-order.test.js
 ```
 
 ## WHERE TO LOOK
@@ -32,92 +39,97 @@ frontend/
 | Task | Location | Notes |
 |------|----------|-------|
 | 改全局状态形状 | `state/appState.js` | `settings` 走 localStorage；`runtime` 是易失状态 |
-| 改 API 调用 | `api/client.js` | 14 个方法对应所有后端端点；throw `Error(payload.error)` |
-| 改题目渲染 | `ui/render.js:renderChoicePractice` / `renderFillBlankPractice` | 选/填空分支 |
+| 改状态合并 | `state/practiceState.js` | 完整/紧凑状态 hydrate；练习补丁；解析合并 |
+| 改 API 调用 | `api/client.js` | 统一超时与重试；练习请求带 `courseId` 与 `operationId` |
+| 改题目渲染 | `ui/render.js:renderChoicePractice` / `renderFillBlankPractice` | 选/填空分支；已作答题目禁用 |
+| 改选项顺序 | `ui/optionOrder.js` | 按题目 ID 缓存；设置切换时清空 |
 | 改题库管理 | `ui/render.js:renderBank` / `renderQuestionForm` | 列表 + 新建/编辑表单 |
 | 改粘贴文本解析 | `utils/parser.js` | 5 个顶部正则：start/option/answer/explanation/noise |
-| 改事件绑定 | `main.js:bind()` | 一处集中；不要散落到其他文件 |
-| 改键盘快捷键 | `main.js:bindKeyboardShortcuts()` | 选项字母按当前题目生成；INPUT/TEXTAREA/SELECT 豁免 |
-| 改答题判定 | `utils/answers.js` / `routes.js:handleApi(/api/practice/answer)` | 两端必须一致；`backend/test/parity.test.js` 会检查 |
+| 改事件绑定 | `main.js:bind()` | 一处集中 |
+| 改键盘快捷键 | `main.js:bindKeyboardShortcuts()` | 只在刷题面板生效；INPUT/TEXTAREA/SELECT/BUTTON 豁免 |
+| 改答题判定 | `utils/answers.js` / `routes.js` | 两端必须一致；`backend/test/parity.test.js` 会检查 |
 | 改复习进度更新 | `utils/review.js:applyQuestionReview` | 与后端 `utils.js:updateQuestionReview` 对应 |
-| 改复习关键词/题型规则 | `data/reviewTaxonomy.js` | 纯数据文件，不含逻辑 |
 | 改失败提示 | `main.js:showToast` / `main.js:request` | 所有 `api.*` 调用都应经 `request()` |
 | 改样式主题 | `styles.css` | 主色 `#b85c2a`（hero `theme-color` 为 `#c05529`） |
 
 ## CODE MAP
 
-| Symbol | File:Line | Role |
-|--------|-----------|------|
-| `runtime` | appState.js:8 | 易失状态：`state` / `selectedAnswers` / `answerFeedback` / `practiceMode` / `questionHistory` |
-| `settings` | appState.js:1 | 持久化：`showAnswer` / `showExplanation` / `autoNext` / `shuffleOptions` |
-| `activeCourse()` | appState.js:26 | `runtime.state.courses.find(id === activeCourseId)` |
-| `currentQuestion()` | appState.js:30 | 通过 `practice.currentQuestionId` 找题目 |
-| `clearCurrentAnswer()` | appState.js:35 | 清空选中答案与答题反馈 |
-| `request(path, options)` | api/client.js:1 | 单一 fetch 包装；非 2xx → throw |
-| `api.*` | api/client.js:14 | 14 个端点（state / courses.* / questions.* / practice.* / study-notes / recognize-image） |
-| `showToast(message)` | main.js:26 | 全局提示条，4 秒后自动隐藏 |
-| `request(action, failureMessage)` | main.js:35 | 包装 `api.*` 调用，失败提示并返回 `{ok:false}` |
-| `bind()` | main.js:44 | 所有事件绑定入口 |
-| `stageLocalPracticeRound()` | main.js:240 | 切换模式时本地重置轮次并重渲染 |
-| `nextQuestion()` | main.js:322 | 乐观切题 + 后台同步统计 |
-| `submitAnswer()` | main.js:406 | 乐观判定 + 更新本地统计 + 后台同步 |
-| `bindKeyboardShortcuts()` | main.js:906 | A–H 选选项 / Enter 提交 / ←→ 切题 / Space 下一题 |
-| `parseQuestions(text)` | utils/parser.js:9 | 行式扫描；自动判定 choice vs fill-blank |
-| `cleanText` / `cleanOption` | utils/parser.js:114,124 | 合并中文拆字空格；修 OCR 错字（`汽车轮取` → `汽车轮胎`） |
-| `getChoiceAnswerTexts` | utils/answers.js:8 | 把答案 key 或文本统一解析为选项文本 |
-| `isChoiceAnswerCorrect` | utils/answers.js:35 | 排序后集合相等 |
-| `isFillBlankAnswerCorrect` | utils/answers.js:41 | 逐空匹配，每空任一可接受答案 |
-| `applyQuestionReview` | utils/review.js:63 | 更新连对次数与已掌握标记 |
-| `analyzeReview(course)` | utils/review.js:3 | 生成复习面板的错题统计、类型、板块与优先列表 |
-| `shuffleArray(arr)` | ui/render.js:17 | Fisher-Yates；用于选项乱序 |
-| `animateQuizCard()` | ui/render.js:31 | 移动端 (`innerWidth <= 760`) 跳过动画 |
-| `renderApp()` | ui/render.js:40 | 全量渲染（四个 panel） |
-| `updatePracticeOnly()` | ui/render.js:52 | 仅重画答题区；切题/答题时用，省 DOM 操作 |
-| `updateBankListOnly()` | ui/render.js:56 | 仅重画题库列表；搜索输入防抖后调用 |
-| `renderBank()` | ui/render.js:606 | 仅在 `bankPanel.active` 时渲染，避免 1900+ 题目无谓重建 |
+| Symbol | Role |
+|--------|------|
+| `runtime` | 易失状态：`state` / `revision` / `pendingCourseId` / `explanationsLoaded` / 选中答案 / 答题反馈 |
+| `settings` | 持久化：`showAnswer` / `showExplanation` / `autoNext` / `shuffleOptions` |
+| `hydrateStatePayload(payload)` | 处理 `/api/bootstrap` 紧凑状态与完整状态 |
+| `applyPracticeStats(state, payload)` | 合并统计、roundTotal、answeredIds、historyIds、exam；不覆盖本地当前题 |
+| `applyPracticePayload(state, payload)` | 整体替换当前课程 practice；下一题取新题、重置、结束模拟 |
+| `applyCoursePayload(state, payload)` | 切换课程；旧课程只保留 `questionCount` |
+| `applyExplanations(state, payload)` | 题库页按需合并解析与速记 |
+| `activeCourse()` | `runtime.state.courses.find(id === activeCourseId)` |
+| `currentQuestion()` | 通过 `practice.currentQuestionId` 找题目 |
+| `request(path, options)` | fetch 包装；AbortController 超时；5xx/网络错误最多重试 |
+| `api.bootstrap()` | 首屏；90 秒超时，覆盖 Render 冷启动 |
+| `api.explanations(courseId)` | 题库页按需解析 |
+| `enqueuePracticeSync(task)` | 练习请求串行化；保证答题、切题、重置按顺序到达服务端 |
+| `registerPracticeFailure(label, task, apply)` | 记录失败任务并显示可重试提示条 |
+| `showAppStatus()` / `hideAppStatus()` | 启动加载、课程加载、错误与重试 |
+| `boot()` | 首屏启动；成功后绑定事件、恢复反馈、渲染 |
+| `stageLocalPracticeRound()` | 模式切换时本地重置轮次 |
+| `nextQuestion()` / `prevQuestion()` | 服务端 history 驱动；答题请求快照 |
+| `submitAnswer()` | 乐观判定 + 快照 selectedAnswers + 后台同步 |
+| `bindKeyboardShortcuts()` | A–H 选选项 / Enter 提交 / ←→ 切题 / Space 下一题；只在刷题面板 |
+| `parseQuestions(text)` | 行式扫描；自动判定 choice vs fill-blank |
+| `getChoiceAnswerTexts` / `isChoiceAnswerCorrect` / `isFillBlankAnswerCorrect` | 选项与答案判定 |
+| `applyQuestionReview` | 更新连对次数与已掌握标记 |
+| `analyzeReview(course)` | 生成复习面板的错题统计、类型、板块与优先列表 |
+| `createOptionOrderCache` | 同一题多次渲染保持选项顺序 |
+| `renderApp()` | 全量渲染（当前可见面板 + 课程工具栏） |
+| `updatePracticeOnly()` | 仅重画答题区 |
+| `updateBankListOnly()` | 仅重画题库列表 |
+| `renderBank()` | 仅在 `bankPanel.active` 时渲染 |
 
 ## CONVENTIONS
 
-- **零构建**：`index.html` 直接 `<script type="module" src="./src/main.js">`；无 bundler/转译
-- **顶层 await**：`main.js` 末尾有 `runtime.state = await api.state()`，必须 module 加载
+- **零构建**：`index.html` 直接加载 `src/main.js`；无 bundler/转译
+- **启动**：`main.js` 调用 `boot()`；首屏失败显示重试按钮与静态题库入口
 - **导入扩展名**：ESM 要求，所有 `import` 显式写 `.js`
-- **DOM 选择器**：用文件内 `$ = (s) => document.querySelector(s)`，不引外部库
-- **HTML 转义**：所有用户内容经 `escapeHtml`；不要直接 innerHTML 拼字符串（XSS 风险）
-- **localStorage key 命名**：`quiz-platform-*` 前缀（避免和别的项目冲突）
-- **事件委托**：答题卡片的 `data-bookmark` 用 `quizCard.addEventListener('click', ...)` 统一处理
-- **失败提示**：新的 `api.*` 调用要用 `request(action, failureMessage)`，不要让 Promise 静默失败
+- **DOM 选择器**：文件内 `$ = (s) => document.querySelector(s)`
+- **HTML 转义**：所有用户内容经 `escapeHtml`
+- **localStorage key 命名**：`quiz-platform-*` 前缀
+- **失败提示**：新 `api.*` 调用要用 `request(action, failureMessage)`
+- **请求快照**：练习任务入队前保存 `courseId`、`questionId`、`selectedAnswers`、mode/count 等，不在任务执行时读取会被清空的 runtime
+- **版本号**：写响应带 `revision`；小于当前值的响应直接忽略
+- **课程定位**：练习与收藏请求带 `courseId`；切换课程期间 `pendingCourseId` 阻止答题
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
-- **不要**用 `document.write` / `eval` / 任何同步阻塞操作
-- **不要**在 `renderApp()` 之外直接操作 DOM —— 状态驱动渲染
+- **不要**用 `document.write` / `eval` / 同步阻塞操作
+- **不要**在 `renderApp()` 之外随意操作 DOM —— 优先走渲染函数
 - **不要**让"乐观更新"与服务端判断逻辑分叉 —— 判定函数改动后跑 `parity.test.js`
-- **不要**把"上一题历史"放到 `practice` 子对象 —— 它是 UI-only 状态，应留在 `runtime.questionHistory`
-- **不要**用 `addEventListener` 给每个 `<input>` 绑 change —— `renderChoicePractice` 内已经处理
-- **不要**改 `settings` 默认值而不更新 `localStorage` 默认 —— 老用户的 `null` 会变 `true`
-- **不要**让 `parser.js` 引入第三方 NLP 库 —— 它是纯正则实现，有意保持
-- **不要**在 `reviewTaxonomy.js` 里写逻辑 —— 它只存放领域数据
+- **不要**把上一题逻辑只放在 `runtime.questionHistory` —— 服务端 `practice.historyIds` 是权威，前端只做镜像
+- **不要**在练习请求里直接读取 `runtime.selectedAnswers` / `runtime.practiceMode` —— 入队前保存快照
+- **不要**在题库页或复习页响应刷题快捷键
+- **不要**每次渲染重新打乱选项 —— 使用 `optionOrder.js`
+- **不要**在 `renderApp()` 中渲染非当前课程的全部题目
+- **不要**改 `settings` 默认值而不更新 localStorage 默认
+- **不要**在 `reviewTaxonomy.js` 里写逻辑
 
 ## UNIQUE STYLES
 
-- **四 Tab 切换**：`data-tab` 属性 + `.active` class；切到 bankPanel / reviewPanel 时强制 `renderApp()`
-- **填空题多空**：`question.answer[i]` 与输入框下标一一对应；分隔符 `；;|、` 任意一种
-- **错题重做定义**：服务端 `wrongCount > 0` —— 题库“只看错题”和“错题重做”保持同一口径
-- **乐观更新 + 统计字段同步**：`nextQuestion` / `submitAnswer` 后台 `.then` 只同步统计字段，不覆盖 `currentQuestionId` 和 `remainingIds`
-- **练习补丁合并**：练习端点只返回 `{ courseId, practice }` 补丁；`resetRound` / `finishExam` 整体替换 `practice`，切题与答题只合并统计和 `exam`，避免后台响应覆盖本地刚切到的题目
-- **请求串行化**：练习相关请求统一走 `enqueuePracticeSync`，保证答题、切题、重置按用户操作顺序落到服务端并合并响应
-- **OCR 容错正则链**：`parser.js:normalize` 做全角→半角 + 修 `PMoO|PmoO|PM0|Pwo` → `PMO` + 修 `汽车轮取` → `汽车轮胎`
-- **多答案排序比较**：两边都规范化后排序，再逐位比较；大小写与全角/半角无关
-- **多选题自动判断**：`question.answer.length > 1` → checkbox + multi-hint；否则 radio
-- **选项乱序触发条件**：仅 `settings.shuffleOptions === true` 时 Fisher-Yates
-- **刷题模式持久化**：`runtime.practiceMode` 写 `localStorage["quiz-platform-practice-mode"]`，模式切换立即重置轮次
-- **考试模式**：`exam` 限时模拟、`exam-wrong` 复盘本轮错题；倒计时由 `setupExamTimer` 维护
+- **四 Tab 切换**：`data-tab` + `.active`；题库/复习面板在切换时渲染
+- **首屏紧凑状态**：`courses` 只有元数据与 `questionCount`；当前课程含 practice 与 questions
+- **解析延迟加载**：首屏只为当前题与 lastAnswer 题保留 explanation / memoryTip；题库页打开时请求 `/api/explanations`
+- **切换课程**：保留旧课程显示，`pendingCourseId` 期间禁用答题；成功后旧课程只留题数
+- **填空题多空**：`question.answer[i]` 与输入框下标一一对应；分隔符 `；;|、`
+- **错题重做**：服务端 `wrongCount > 0`
+- **乐观更新 + 统计字段同步**：切题/答题后台只合并统计字段；重置与结束模拟整体替换 practice
+- **请求串行化**：练习请求经 `enqueuePracticeSync`；失败任务进入提示条，使用同一 `operationId` 重试
+- **选项乱序**：同一题保持顺序；切换设置或题目内容变化时清空缓存
+- **考试模式**：`exam` 与 `exam-wrong`；倒计时由 `setupExamTimer` 维护；自动结束失败后停止每秒重试
 
 ## NOTES
 
-- `main.js` 顶层 await 抛错时显示带 stack 的红色错误页（开发体验保留）
-- `runtime.state` 启动时调 `api.state()` 同步；之后写操作经 `request()` 更新
-- 上一题/下一题：`prevQuestion` 把当前题 `unshift` 回 `remainingIds`；`nextQuestion` 用 `questionHistory` 记录
-- `bankList` 同时绑 `click` 给 `deleteQuestion` 和 `handleBankActions`（事件复用，靠 dataset 区分）
-- 移动端 `innerWidth <= 760` 跳过 `fadeSlideUp` 动画以提升性能
-- 答题后 `setTimeout(..., 200)` 触发自动下一题（仅 `settings.autoNext` + 答对 + 本轮还有剩余题）
+- `main.js` 首屏失败不再替换整个页面；显示 `#appStatus` 与重试按钮
+- `runtime.state` 启动时由 `api.bootstrap()` 填充；写操作后按响应 hydrate
+- 练习请求带 `operationId`，服务端用 `recentOperationIds` 去重；网络重试安全
+- `bankList` 同时绑 `click` 给 `deleteQuestion` 与 `handleBankActions`，靠 dataset 区分
+- 移动端 `innerWidth <= 760` 跳过 `fadeSlideUp` 动画
+- 答题后 `setTimeout(..., 200)` 触发自动下一题（仅 autoNext + 答对 + 本轮还有剩余题）
