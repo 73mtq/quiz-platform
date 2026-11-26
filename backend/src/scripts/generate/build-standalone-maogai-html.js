@@ -1973,6 +1973,7 @@ function clientApp() {
     recordExamAnswer(course.practice, answer);
     persistState();
     renderPracticeOnly();
+    renderCourseToolbar();
 
     if (correct && settings.autoNext && hasNextQuestionInRound(course.practice)) {
       setTimeout(nextQuestion, 200);
