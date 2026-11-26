@@ -112,6 +112,7 @@ npm run build:ns-pages  # 生成 docs/index.html，推送后 GitHub Pages 自动
 ```
 
 - 当前线上入口：<https://73mtq.github.io/quiz-platform/>
+- Render 镜像：<https://quiz-platform-fbxp.onrender.com/national-security.html>（旧域名，无数据库；免费实例休眠后首次打开约 1 分钟）
 - 内容源：`content/national-security/course.json`
 - 解析批次：`content/national-security/explanations/batch-*.json`
 - 进度保存在手机浏览器的 localStorage；页面提供“导出进度”和“导入进度”。
