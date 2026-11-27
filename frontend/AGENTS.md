@@ -41,7 +41,7 @@ frontend/
 | 改全局状态形状 | `state/appState.js` | `settings` 走 localStorage；`runtime` 是易失状态 |
 | 改状态合并 | `state/practiceState.js` | 完整/紧凑状态 hydrate；练习补丁；解析合并 |
 | 改 API 调用 | `api/client.js` | 统一超时与重试；练习请求带 `courseId` 与 `operationId` |
-| 改题目渲染 | `ui/render.js:renderChoicePractice` / `renderFillBlankPractice` | 选/填空分支；已作答题目禁用 |
+| 改题目渲染 | `ui/render.js:renderChoicePractice` / `renderFillBlankPractice` | 选/填空分支；已作答题目禁用，并回显当时答案 |
 | 改选项顺序 | `ui/optionOrder.js` | 按题目 ID 缓存；设置切换时清空 |
 | 改题库管理 | `ui/render.js:renderBank` / `renderQuestionForm` | 列表 + 新建/编辑表单 |
 | 改粘贴文本解析 | `utils/parser.js` | 5 个顶部正则：start/option/answer/explanation/noise |
@@ -78,6 +78,7 @@ frontend/
 | `bindKeyboardShortcuts()` | A–H 选选项 / Enter 提交 / ←→ 切题 / Space 下一题；只在刷题面板 |
 | `parseQuestions(text)` | 行式扫描；自动判定 choice vs fill-blank |
 | `getChoiceAnswerTexts` / `isChoiceAnswerCorrect` / `isFillBlankAnswerCorrect` | 选项与答案判定 |
+| `resolveAnswerFeedback` | 已作答题目回溯：实时反馈优先，否则用本轮保存的答案重建 |
 | `applyQuestionReview` | 更新连对次数与已掌握标记 |
 | `analyzeReview(course)` | 生成复习面板的错题统计、类型、板块与优先列表 |
 | `createOptionOrderCache` | 同一题多次渲染保持选项顺序 |

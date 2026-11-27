@@ -1547,6 +1547,20 @@ function clientApp() {
     return selected.length === correct.length && selected.every((item, index) => item === correct[index]);
   }
 
+  function isFillBlankAnswerCorrect(question, selectedAnswers = []) {
+    const answers = (selectedAnswers || []).map((item) => String(item ?? "").trim());
+    const blanks = question.answer || [];
+    const blanksCorrect = answers.map((userAnswerText, index) => {
+      if (!userAnswerText) return false;
+      const acceptable = String(blanks[index] || "")
+        .split(/[；;|、]/)
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+      return acceptable.includes(userAnswerText.toLowerCase());
+    });
+    return blanksCorrect.length === blanks.length && blanksCorrect.every(Boolean);
+  }
+
   function loadSettings() {
     const saved = readJson(SETTINGS_KEY, {});
     return {
@@ -1870,6 +1884,9 @@ function clientApp() {
   }
 
   function roundQuestionTotal(practice = {}, fallbackTotal = 0) {
+    const fixed = Number(practice.roundTotal) || 0;
+    if (fixed > 0) return fixed;
+
     const answered = Number(practice.answeredInRound) || 0;
     const remaining = Array.isArray(practice.remainingIds) ? practice.remainingIds.length : 0;
     const currentSubmitted = practice.lastAnswer?.questionId && practice.lastAnswer.questionId === practice.currentQuestionId;
@@ -1897,6 +1914,27 @@ function clientApp() {
 
   function hasNextQuestionInRound(practice = {}) {
     return Array.isArray(practice.remainingIds) && practice.remainingIds.length > 0;
+  }
+
+  function isQuestionAnsweredInRound(practice = {}, questionId) {
+    return Boolean(questionId && Array.isArray(practice.answeredIds) && practice.answeredIds.includes(questionId));
+  }
+
+  /** 本轮已作答回顾：优先使用刚提交的反馈，否则用本轮保存的答案重建 */
+  function resolveAnswerFeedback({ question, practice = {}, liveFeedback = null } = {}) {
+    if (!question?.id) return null;
+    if (liveFeedback?.questionId === question.id) return liveFeedback;
+    if (!isQuestionAnsweredInRound(practice, question.id)) return null;
+
+    const examAnswer = (practice.exam?.answers || []).find((answer) => answer?.questionId === question.id);
+    const recordedAnswers = examAnswer?.selectedAnswers || question.review?.lastSelectedAnswers || [];
+    if (!recordedAnswers.length) return null;
+
+    const selectedAnswers = recordedAnswers.map((item) => String(item));
+    const correct = question.type === "fill-blank"
+      ? isFillBlankAnswerCorrect(question, selectedAnswers)
+      : isChoiceAnswerCorrect(question, selectedAnswers);
+    return { questionId: question.id, selectedAnswers, correct };
   }
 
   function isPracticeRoundComplete(practice = {}, fallbackTotal = 0) {
@@ -2445,7 +2483,13 @@ function clientApp() {
     const isMulti = question.answer.length > 1;
     const inputType = isMulti ? "checkbox" : "radio";
     const options = settings.shuffleOptions ? orderedOptions(question) : question.options;
-    const answered = activeCourse().practice.answeredIds?.includes(question.id);
+    const feedback = resolveAnswerFeedback({
+      question,
+      practice: activeCourse().practice,
+      liveFeedback: runtime.answerFeedback
+    });
+    const answered = isQuestionAnsweredInRound(activeCourse().practice, question.id);
+    const selectedAnswers = feedback ? feedback.selectedAnswers : runtime.selectedAnswers;
     const wrongTag = question.wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${question.wrongCount} 次</span>` : "";
     $("#quizCard").innerHTML = `
       <div class="quiz-card-header">
@@ -2454,16 +2498,16 @@ function clientApp() {
       </div>
       <div class="option-list">
         ${options.map((option) => `
-          <label class="option ${optionClass(question, option)}">
-            <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback || answered ? "disabled" : ""}>
+          <label class="option ${optionClass(question, option, feedback)}">
+            <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${feedback || answered ? "disabled" : ""}>
             <span><b>${escapeHtml(option.key)}.</b> ${escapeHtml(option.text)}</span>
           </label>
         `).join("")}
       </div>
-      <div id="answerResult">${renderAnswerFeedback(question)}</div>
+      <div id="answerResult">${renderAnswerFeedback(question, feedback)}</div>
     `;
     document.querySelectorAll("input[name='answer']").forEach((input) => {
-      input.checked = hasChoiceAnswer(question, input.value, runtime.selectedAnswers);
+      input.checked = hasChoiceAnswer(question, input.value, selectedAnswers);
       input.addEventListener("change", () => {
         const value = input.value;
         if (isMulti) {
@@ -2477,12 +2521,16 @@ function clientApp() {
   }
 
   function renderFillBlankPractice(question) {
-    const feedback = runtime.answerFeedback;
-    const hasSubmitted = (feedback && feedback.questionId === question.id)
-      || activeCourse().practice.answeredIds?.includes(question.id);
+    const feedback = resolveAnswerFeedback({
+      question,
+      practice: activeCourse().practice,
+      liveFeedback: runtime.answerFeedback
+    });
+    const hasSubmitted = Boolean(feedback || isQuestionAnsweredInRound(activeCourse().practice, question.id));
+    const filledAnswers = feedback ? feedback.selectedAnswers : runtime.selectedAnswers;
     const blankCount = question.answer.length;
     const inputs = Array.from({ length: blankCount }, (_, index) => (
-      `<input type="text" class="fill-blank-input" data-index="${index}" placeholder="第${index + 1}个空" value="${escapeHtml(runtime.selectedAnswers[index] || "")}" ${hasSubmitted ? "disabled" : ""}>`
+      `<input type="text" class="fill-blank-input" data-index="${index}" placeholder="第${index + 1}个空" value="${escapeHtml(filledAnswers[index] || "")}" ${hasSubmitted ? "disabled" : ""}>`
     )).join("");
     $("#quizCard").innerHTML = `
       <div class="quiz-card-header">
@@ -2490,7 +2538,7 @@ function clientApp() {
         <button class="bookmark-btn ${question.bookmarked ? "active" : ""}" data-bookmark="${escapeHtml(question.id)}" title="收藏" type="button">★</button>
       </div>
       <div class="fill-blank-area">${inputs}</div>
-      <div id="answerResult">${renderAnswerFeedback(question)}</div>
+      <div id="answerResult">${renderAnswerFeedback(question, feedback)}</div>
     `;
     if (!hasSubmitted) {
       document.querySelectorAll(".fill-blank-input").forEach((input) => {
@@ -2501,17 +2549,15 @@ function clientApp() {
     }
   }
 
-  function optionClass(question, option) {
-    const feedback = runtime.answerFeedback;
-    if (!feedback || feedback.questionId !== question.id) return "";
+  function optionClass(question, option, feedback) {
+    if (!feedback) return "";
     if (hasChoiceAnswer(question, option.text)) return "is-correct";
     if (feedback.selectedAnswers && hasChoiceAnswer(question, option.text, feedback.selectedAnswers)) return "is-wrong";
     return "";
   }
 
-  function renderAnswerFeedback(question) {
-    const feedback = runtime.answerFeedback;
-    if (!feedback || feedback.questionId !== question.id) return "";
+  function renderAnswerFeedback(question, feedback) {
+    if (!feedback) return "";
     const isFillBlank = question.type === "fill-blank";
     const selected = isFillBlank
       ? (feedback.selectedAnswers || []).map((answer, index) => `第${index + 1}空：${answer || "未填写"}`).join("、")
@@ -2988,6 +3034,7 @@ function clientApp() {
       if (/^[A-Z]$/.test(key)) {
         const question = currentQuestion();
         if (!question || runtime.answerFeedback) return;
+        if (isQuestionAnsweredInRound(activeCourse().practice, question.id)) return;
         const option = question.options?.find((item) => item.key === key);
         if (!option) return;
         const input = document.querySelector(`input[name='answer'][data-key='${key}']`);
@@ -3023,7 +3070,7 @@ function clientApp() {
 
   bind();
   const course = activeCourse();
-  if (course.practice.lastAnswer) {
+  if (course.practice.lastAnswer?.questionId === course.practice.currentQuestionId) {
     runtime.answerFeedback = course.practice.lastAnswer;
     runtime.selectedAnswers = course.practice.lastAnswer.selectedAnswers || [];
     runtime.submittedQuestionId = course.practice.lastAnswer.questionId;

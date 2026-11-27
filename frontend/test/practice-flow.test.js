@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applyLocalPracticeConfig,
   isQuestionAnsweredInRound,
+  resolveAnswerFeedback,
   roundQuestionTotal
 } from "../src/utils/practiceFlow.js";
 
@@ -38,6 +39,88 @@ test("answeredIds blocks a repeated count", () => {
   assert.equal(isQuestionAnsweredInRound({ answeredIds: ["q1"] }, "q1"), true);
   assert.equal(isQuestionAnsweredInRound({ answeredIds: ["q1"] }, "q2"), false);
   assert.equal(isQuestionAnsweredInRound({}, "q1"), false);
+});
+
+function choiceRecord(selectedAnswers) {
+  return {
+    id: "q-choice",
+    type: "choice",
+    options: [{ key: "A", text: "甲" }, { key: "B", text: "乙" }],
+    answer: ["甲"],
+    review: { lastSelectedAnswers: selectedAnswers }
+  };
+}
+
+test("resolveAnswerFeedback ignores questions not answered in this round", () => {
+  const question = choiceRecord(["甲"]);
+  const practice = { answeredIds: [], exam: { answers: [] } };
+
+  assert.equal(resolveAnswerFeedback({ question, practice }), null);
+});
+
+test("resolveAnswerFeedback prefers the live feedback", () => {
+  const question = choiceRecord(["甲"]);
+  const liveFeedback = { questionId: "q-choice", selectedAnswers: ["甲"], correct: true };
+
+  assert.equal(resolveAnswerFeedback({ question, practice: { answeredIds: ["q-choice"] }, liveFeedback }), liveFeedback);
+});
+
+test("resolveAnswerFeedback rebuilds a recorded choice answer", () => {
+  const question = choiceRecord(["乙"]);
+  const practice = { answeredIds: ["q-choice"], exam: { answers: [] }, answeredInRound: 1 };
+
+  assert.deepEqual(resolveAnswerFeedback({ question, practice }), {
+    questionId: "q-choice",
+    selectedAnswers: ["乙"],
+    correct: false
+  });
+});
+
+test("resolveAnswerFeedback falls back to exam answers", () => {
+  const question = choiceRecord([]);
+  const practice = {
+    answeredIds: ["q-choice"],
+    exam: { answers: [{ questionId: "q-choice", selectedAnswers: ["甲"], correct: true }] }
+  };
+
+  assert.deepEqual(resolveAnswerFeedback({ question, practice }), {
+    questionId: "q-choice",
+    selectedAnswers: ["甲"],
+    correct: true
+  });
+});
+
+test("resolveAnswerFeedback judges fill-blank answers with separators", () => {
+  const question = {
+    id: "q-blank",
+    type: "fill-blank",
+    answer: ["北京；首都", "上海"],
+    review: { lastSelectedAnswers: ["首都", "上海"] }
+  };
+  const practice = { answeredIds: ["q-blank"], exam: { answers: [] } };
+
+  assert.deepEqual(resolveAnswerFeedback({ question, practice }), {
+    questionId: "q-blank",
+    selectedAnswers: ["首都", "上海"],
+    correct: true
+  });
+});
+
+test("resolveAnswerFeedback keeps the round progress untouched", () => {
+  const question = choiceRecord(["甲"]);
+  const practice = {
+    roundTotal: 10,
+    answeredInRound: 4,
+    correctInRound: 3,
+    answeredIds: ["q-choice"],
+    remainingIds: ["q-next"],
+    currentQuestionId: "q-choice",
+    exam: { answers: [] }
+  };
+  const snapshot = JSON.parse(JSON.stringify(practice));
+
+  resolveAnswerFeedback({ question, practice });
+  assert.deepEqual(practice, snapshot);
 });
 
 test("applyLocalPracticeConfig clears round markers", () => {

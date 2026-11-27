@@ -210,6 +210,7 @@ async function handleApi(req, res, url, repository, aiService) {
     }
 
     if (req.method === "POST" && url.pathname === "/api/practice/next") {
+      let currentQuestion = null;
       const result = await repository.updatePractice(body.courseId || null, (view) => {
         const course = repository.getActiveCourse(view);
         const input = practiceInput(body, course.practice);
@@ -230,9 +231,10 @@ async function handleApi(req, res, url, repository, aiService) {
         }
         course.practice.currentQuestionId = course.practice.remainingIds.shift() || null;
         course.practice.lastAnswer = null;
+        currentQuestion = findQuestion(course, course.practice.currentQuestionId);
       }, { operationId: body.operationId || "", needStats: true });
       if (!result) throw httpError(404, "课程不存在");
-      await sendJson(req, res, 200, practicePayload(result));
+      await sendJson(req, res, 200, withQuestionNotes(practicePayload(result), currentQuestion));
       return;
     }
 
@@ -364,6 +366,7 @@ async function handleApi(req, res, url, repository, aiService) {
     }
 
     if (req.method === "POST" && url.pathname === "/api/practice/prev") {
+      let currentQuestion = null;
       const result = await repository.updatePractice(body.courseId || null, (view) => {
         const course = repository.getActiveCourse(view);
         const practice = course.practice;
@@ -372,9 +375,10 @@ async function handleApi(req, res, url, repository, aiService) {
         if (practice.currentQuestionId) practice.remainingIds.unshift(practice.currentQuestionId);
         practice.currentQuestionId = previousId;
         practice.lastAnswer = null;
+        currentQuestion = findQuestion(course, practice.currentQuestionId);
       }, { operationId: body.operationId || "", needStats: false });
       if (!result) throw httpError(404, "课程不存在");
-      await sendJson(req, res, 200, practicePayload(result));
+      await sendJson(req, res, 200, withQuestionNotes(practicePayload(result), currentQuestion));
       return;
     }
 
@@ -753,6 +757,23 @@ function normalizeFingerprintText(value) {
     .replace(/[。．.]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function findQuestion(course, questionId) {
+  if (!questionId) return null;
+  return (course.questions || []).find((question) => question.id === questionId) || null;
+}
+
+function withQuestionNotes(payload, question) {
+  if (!question) return payload;
+  return {
+    ...payload,
+    question: {
+      id: question.id,
+      explanation: question.explanation || "",
+      memoryTip: question.memoryTip || ""
+    }
+  };
 }
 
 function questionState(question) {

@@ -812,6 +812,29 @@ test("prev restores current question and remaining ids", async () => {
   });
 });
 
+test("next and prev return the current question notes", async () => {
+  const state = createState();
+  const practice = state.courses[0].practice;
+  practice.currentQuestionId = "unanswered";
+  practice.remainingIds = ["bookmarked"];
+  practice.roundTotal = 2;
+  state.courses[0].questions.find((question) => question.id === "unanswered").explanation = "上一题的解析";
+  state.courses[0].questions.find((question) => question.id === "bookmarked").explanation = "下一题的解析";
+  state.courses[0].questions.find((question) => question.id === "bookmarked").memoryTip = "下一题的速记";
+
+  await withServer(state, async (request) => {
+    const next = await request("/api/practice/next", { mode: "all" });
+    assert.equal(next.question.id, "bookmarked");
+    assert.equal(next.question.explanation, "下一题的解析");
+    assert.equal(next.question.memoryTip, "下一题的速记");
+    assert.equal(next.question.wrongCount, undefined);
+
+    const previous = await request("/api/practice/prev", {});
+    assert.equal(previous.question.id, "unanswered");
+    assert.equal(previous.question.explanation, "上一题的解析");
+  });
+});
+
 test("duplicate operation id does not count twice", async () => {
   const state = createState();
   state.courses[0].practice.currentQuestionId = "unanswered";

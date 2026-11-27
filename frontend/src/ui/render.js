@@ -8,6 +8,7 @@ import {
   isPracticeRoundComplete,
   isPracticeRoundStarted,
   isQuestionAnsweredInRound,
+  resolveAnswerFeedback,
   roundAnsweredCount,
   roundQuestionTotal,
   roundRemainingCount,
@@ -327,7 +328,13 @@ function renderChoicePractice(question) {
   const wrongTag = wrongCount > 0 ? `<span class="wrong-count-tag">已错 ${wrongCount} 次</span>` : "";
   const bookmarked = question.bookmarked ? "active" : "";
   const options = settings.shuffleOptions ? optionOrders.ordered(question) : question.options;
+  const feedback = resolveAnswerFeedback({
+    question,
+    practice: activeCourse().practice,
+    liveFeedback: runtime.answerFeedback
+  });
   const answered = isQuestionAnsweredInRound(activeCourse().practice, question.id);
+  const selectedAnswers = feedback ? feedback.selectedAnswers : runtime.selectedAnswers;
   const stem = String(question.stem || "").trim() || "题干缺失";
   $("#quizCard").innerHTML = `
     <div class="quiz-card-header">
@@ -336,16 +343,16 @@ function renderChoicePractice(question) {
     </div>
     <div class="option-list">
       ${options.map((option) => `
-        <label class="option ${optionClass(question, option)}">
-          <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${runtime.answerFeedback || answered ? "disabled" : ""}>
+        <label class="option ${optionClass(question, option, feedback)}">
+          <input type="${inputType}" name="answer" value="${escapeHtml(option.text)}" data-key="${escapeHtml(option.key)}" ${feedback || answered ? "disabled" : ""}>
           <span><b>${escapeHtml(option.key)}.</b> ${escapeHtml(option.text)}</span>
         </label>
       `).join("")}
     </div>
-    <div id="answerResult">${renderAnswerFeedback(question)}</div>
+    <div id="answerResult">${renderAnswerFeedback(question, feedback)}</div>
   `;
   document.querySelectorAll("input[name='answer']").forEach((input) => {
-    input.checked = hasChoiceAnswer(question, input.value, runtime.selectedAnswers);
+    input.checked = hasChoiceAnswer(question, input.value, selectedAnswers);
     input.addEventListener("change", () => {
       const value = input.value;
       if (isMulti) {
@@ -362,9 +369,13 @@ function renderChoicePractice(question) {
 }
 
 function renderFillBlankPractice(question) {
-  const feedback = runtime.answerFeedback;
-  const hasSubmitted = (feedback && feedback.questionId === question.id)
-    || isQuestionAnsweredInRound(activeCourse().practice, question.id);
+  const feedback = resolveAnswerFeedback({
+    question,
+    practice: activeCourse().practice,
+    liveFeedback: runtime.answerFeedback
+  });
+  const hasSubmitted = Boolean(feedback || isQuestionAnsweredInRound(activeCourse().practice, question.id));
+  const filledAnswers = feedback ? feedback.selectedAnswers : runtime.selectedAnswers;
   const blankCount = question.answer.length;
   const blankHint = blankCount > 1 ? `<span class="multi-hint">（共 ${blankCount} 个空）</span>` : "";
   const wrongCount = question.wrongCount || 0;
@@ -373,7 +384,7 @@ function renderFillBlankPractice(question) {
   const stem = String(question.stem || "").trim() || "题干缺失";
 
   const blanksHtml = Array.from({ length: blankCount }, (_, i) => {
-    const val = runtime.selectedAnswers[i] || "";
+    const val = filledAnswers[i] || "";
     return `<input type="text" class="fill-blank-input" data-index="${i}" placeholder="第${i + 1}个空" value="${escapeHtml(val)}" ${hasSubmitted ? "disabled" : ""}>`;
   }).join("");
 
@@ -383,7 +394,7 @@ function renderFillBlankPractice(question) {
       <button class="bookmark-btn ${bookmarked}" data-bookmark="${escapeHtml(question.id)}" title="收藏" aria-label="收藏本题" aria-pressed="${Boolean(question.bookmarked)}">★</button>
     </div>
     <div class="fill-blank-area">${blanksHtml}</div>
-    <div id="answerResult">${renderAnswerFeedback(question)}</div>
+    <div id="answerResult">${renderAnswerFeedback(question, feedback)}</div>
   `;
 
   if (!hasSubmitted) {
@@ -396,17 +407,15 @@ function renderFillBlankPractice(question) {
   }
 }
 
-function optionClass(question, option) {
-  const feedback = runtime.answerFeedback;
-  if (!feedback || feedback.questionId !== question.id) return "";
+function optionClass(question, option, feedback) {
+  if (!feedback) return "";
   if (hasChoiceAnswer(question, option.text)) return "is-correct";
   if (feedback.selectedAnswers && hasChoiceAnswer(question, option.text, feedback.selectedAnswers)) return "is-wrong";
   return "";
 }
 
-function renderAnswerFeedback(question) {
-  const feedback = runtime.answerFeedback;
-  if (!feedback || feedback.questionId !== question.id) return "";
+function renderAnswerFeedback(question, feedback) {
+  if (!feedback) return "";
 
   const isFillBlank = question.type === "fill-blank";
   const selected = isFillBlank

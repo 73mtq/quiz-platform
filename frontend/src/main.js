@@ -571,7 +571,7 @@ async function prevQuestion() {
   if (runtime.pendingCourseId) return;
   if (!(await ensureActiveCourseSynced())) return;
   const course = activeCourse();
-  if (!course || !course.practice.historyIds?.length) return;
+  if (!course) return;
   const courseId = course.id;
   const operationId = createOperationId();
   const task = () => api.prevQuestion(courseId, operationId);
@@ -1148,7 +1148,7 @@ function bindKeyboardShortcuts() {
 
     const key = event.key.toUpperCase();
     const question = currentQuestion();
-    if (/^[A-Z]$/.test(key) && question && !runtime.answerFeedback) {
+    if (/^[A-Z]$/.test(key) && question && !runtime.answerFeedback && !isQuestionAnsweredInRound(activeCourse().practice, question.id)) {
       const option = question.options.find((item) => String(item.key || "").toUpperCase() === key);
       if (option) {
         const isMulti = question.answer.length > 1;
@@ -1229,7 +1229,7 @@ async function boot() {
     }
     runtime.questionHistory = course.practice.historyIds || [];
 
-    if (course.practice.lastAnswer) {
+    if (course.practice.lastAnswer?.questionId === course.practice.currentQuestionId) {
       runtime.answerFeedback = course.practice.lastAnswer;
       runtime.selectedAnswers = course.practice.lastAnswer.selectedAnswers || [];
     }

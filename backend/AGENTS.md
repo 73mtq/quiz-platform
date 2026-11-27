@@ -98,7 +98,7 @@ backend/test/              # node --test 自动发现
 
 - **首屏按课程加载**：`/api/bootstrap` 返回 `revision`、课程元数据、当前课程；切换课程时 `/api/courses/active` 返回目标课程
 - **解析延迟加载**：`/api/bootstrap` 只为当前题与 `lastAnswer` 题保留 explanation / memoryTip；题库页打开时调用 `/api/explanations`
-- **紧凑补丁响应**：练习端点返回 `{ revision, courseId, practice }`；答题额外带 `answerResult` 与 `question`
+- **紧凑补丁响应**：练习端点返回 `{ revision, courseId, practice }`；答题额外带 `answerResult` 与 `question`，`next` / `prev` 带当前题目的 explanation 与 memoryTip
 - **练习状态字段**：`roundTotal`、`answeredIds`、`historyIds`、`recentOperationIds`；`next` 写 history，`prev` 从 history 弹出
 - **答题规则**：只接受当前题或本轮历史中尚未计分的题；同一轮同一题只计一次
 - **写入粒度**：答题写 practice 与一个 stats 条目；下一题、上一题、重置、切换课程只写 practice

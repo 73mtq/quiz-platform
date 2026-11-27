@@ -1,3 +1,5 @@
+import { isChoiceAnswerCorrect, isFillBlankAnswerCorrect } from "./answers.js";
+
 export function examQuestionTotal(practice = {}, fallbackTotal = 0) {
   const examIds = practice.exam?.questionIds;
   if (Array.isArray(examIds) && examIds.length) return examIds.length;
@@ -44,6 +46,23 @@ export function shouldAutoNextAfterSubmit({ correct, autoNext, practice }) {
 
 export function isQuestionAnsweredInRound(practice = {}, questionId) {
   return Boolean(questionId && Array.isArray(practice.answeredIds) && practice.answeredIds.includes(questionId));
+}
+
+/** 本轮已作答回顾：优先使用刚提交的反馈，否则用本轮保存的答案重建 */
+export function resolveAnswerFeedback({ question, practice = {}, liveFeedback = null } = {}) {
+  if (!question?.id) return null;
+  if (liveFeedback?.questionId === question.id) return liveFeedback;
+  if (!isQuestionAnsweredInRound(practice, question.id)) return null;
+
+  const examAnswer = (practice.exam?.answers || []).find((answer) => answer?.questionId === question.id);
+  const recordedAnswers = examAnswer?.selectedAnswers || question.review?.lastSelectedAnswers || [];
+  if (!recordedAnswers.length) return null;
+
+  const selectedAnswers = recordedAnswers.map((item) => String(item));
+  const correct = question.type === "fill-blank"
+    ? isFillBlankAnswerCorrect(question, selectedAnswers)
+    : isChoiceAnswerCorrect(question, selectedAnswers);
+  return { questionId: question.id, selectedAnswers, correct };
 }
 
 export function isPracticeRoundComplete(practice = {}, fallbackTotal = 0) {
