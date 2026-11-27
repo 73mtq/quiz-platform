@@ -812,6 +812,35 @@ test("prev restores current question and remaining ids", async () => {
   });
 });
 
+test("legacy rounds restore answered ids from review timestamps", async () => {
+  const state = createState();
+  const course = state.courses[0];
+  const practice = course.practice;
+  practice.answeredInRound = 1;
+  practice.answeredIds = [];
+  practice.lastAnswer = null;
+  practice.currentQuestionId = "unanswered";
+  practice.roundTotal = 2;
+  practice.remainingIds = ["bookmarked"];
+  course.questions.find((question) => question.id === "unanswered").review = {
+    lastAnsweredAt: "2026-01-02T00:00:00.000Z",
+    lastSelectedAnswers: ["Alpha"]
+  };
+
+  await withServer(state, async (request) => {
+    const rejected = await request("/api/practice/answer", {
+      questionId: "unanswered",
+      selectedAnswers: ["Alpha"]
+    });
+    assert.equal(rejected.answerResult.accepted, false);
+    assert.deepEqual(rejected.practice.answeredIds, ["unanswered"]);
+
+    const next = await request("/api/practice/next", { mode: "all" });
+    assert.deepEqual(next.practice.answeredIds, ["unanswered"]);
+    assert.equal(next.practice.answeredInRound, 1);
+  });
+});
+
 test("next and prev return the current question notes", async () => {
   const state = createState();
   const practice = state.courses[0].practice;

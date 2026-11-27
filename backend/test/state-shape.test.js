@@ -129,6 +129,19 @@ test("splitState drops orphan stats and defaults", () => {
   assert.equal(isDefaultStats(statsPatchForQuestion(state.courses[0].questions.find((item) => item.id === "q1"))), false);
 });
 
+test("compactStatePayload restores answered ids for legacy rounds", () => {
+  const state = sampleState();
+  const practice = state.courses[0].practice;
+  practice.answeredIds = [];
+  practice.answeredInRound = 1;
+  practice.lastAnswer = null;
+
+  const payload = compactStatePayload(state, 1);
+
+  assert.deepEqual(payload.course.practice.answeredIds, ["q1"]);
+  assert.deepEqual(practice.answeredIds, []);
+});
+
 test("compactStatePayload contains only the active course questions", () => {
   const state = sampleState();
   const payload = compactStatePayload(state, 12);

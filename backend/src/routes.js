@@ -15,6 +15,7 @@ import {
   normalizeChoiceText,
   normalizeQuestion,
   readBody,
+  restoreAnsweredIds,
   sendBody,
   sendJson,
   updateQuestionReview,
@@ -127,9 +128,18 @@ async function handleApi(req, res, url, repository, aiService) {
       const lightResponse = url.searchParams.get("light") === "1";
       const result = await repository.setActiveCourse(body.courseId, { includeCourse: !lightResponse });
       if (!result) throw httpError(404, "课程不存在");
+      const course = result.course
+        ? {
+          ...result.course,
+          practice: {
+            ...result.course.practice,
+            answeredIds: restoreAnsweredIds(result.course.practice, result.course.questions)
+          }
+        }
+        : null;
       await sendJson(req, res, 200, lightResponse
         ? { revision: result.revision, activeCourseId: result.activeCourseId }
-        : { revision: result.revision, activeCourseId: result.activeCourseId, course: result.course });
+        : { revision: result.revision, activeCourseId: result.activeCourseId, course });
       return;
     }
 
@@ -213,6 +223,7 @@ async function handleApi(req, res, url, repository, aiService) {
       let currentQuestion = null;
       const result = await repository.updatePractice(body.courseId || null, (view) => {
         const course = repository.getActiveCourse(view);
+        course.practice.answeredIds = restoreAnsweredIds(course.practice, course.questions);
         const input = practiceInput(body, course.practice);
         const modeChanged = input.mode !== course.practice.mode;
         applyPracticeConfig(course, input);
@@ -254,6 +265,7 @@ async function handleApi(req, res, url, repository, aiService) {
           if (!question) throw httpError(404, "题目不存在");
           const practice = course.practice;
 
+          practice.answeredIds = restoreAnsweredIds(practice, course.questions);
           if (practice.answeredIds.includes(question.id)) {
             answerResult = {
               accepted: false,
@@ -355,8 +367,9 @@ async function handleApi(req, res, url, repository, aiService) {
       let summary = null;
       const result = await repository.updatePractice(body.courseId || null, (view) => {
         const course = repository.getActiveCourse(view);
+        course.practice.answeredIds = restoreAnsweredIds(course.practice, course.questions);
         summary = finishExam(course, { timedOut: Boolean(body.timedOut) });
-      }, { operationId: body.operationId || "", needStats: false });
+      }, { operationId: body.operationId || "", needStats: true });
       if (!result) throw httpError(404, "课程不存在");
       await sendJson(req, res, 200, {
         ...practicePayload(result),
@@ -370,13 +383,14 @@ async function handleApi(req, res, url, repository, aiService) {
       const result = await repository.updatePractice(body.courseId || null, (view) => {
         const course = repository.getActiveCourse(view);
         const practice = course.practice;
+        practice.answeredIds = restoreAnsweredIds(practice, course.questions);
         if (!practice.historyIds.length) return false;
         const previousId = practice.historyIds.pop();
         if (practice.currentQuestionId) practice.remainingIds.unshift(practice.currentQuestionId);
         practice.currentQuestionId = previousId;
         practice.lastAnswer = null;
         currentQuestion = findQuestion(course, practice.currentQuestionId);
-      }, { operationId: body.operationId || "", needStats: false });
+      }, { operationId: body.operationId || "", needStats: true });
       if (!result) throw httpError(404, "课程不存在");
       await sendJson(req, res, 200, withQuestionNotes(practicePayload(result), currentQuestion));
       return;

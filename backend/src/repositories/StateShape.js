@@ -2,6 +2,7 @@ import {
   createId,
   normalizeQuestion,
   normalizeReviewState,
+  restoreAnsweredIds,
   validateQuestion
 } from "../utils.js";
 
@@ -183,7 +184,7 @@ export function mergeState(data, practice, stats) {
 }
 
 export function compactStatePayload(state, revision = 0) {
-  const active = getActiveCourse(state);
+  const active = withRestoredAnsweredIds(getActiveCourse(state));
   const keepExplanationIds = new Set([
     active.practice?.currentQuestionId,
     active.practice?.lastAnswer?.questionId
@@ -211,7 +212,19 @@ export function compactCoursePayload(course, revision = 0) {
   return {
     revision,
     activeCourseId: course.id,
-    course
+    course: withRestoredAnsweredIds(course)
+  };
+}
+
+function withRestoredAnsweredIds(course) {
+  const practice = course.practice || {};
+  const answeredIds = restoreAnsweredIds(practice, course.questions || []);
+  return {
+    ...course,
+    practice: {
+      ...practice,
+      answeredIds
+    }
   };
 }
 

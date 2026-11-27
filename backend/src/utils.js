@@ -128,6 +128,20 @@ export function getWrongPracticeQuestions(questions) {
     .sort((a, b) => reviewPriority(b) - reviewPriority(a));
 }
 
+/** 旧版轮次没有 answeredIds 时，用最近的答题时间补回本轮已答题目 */
+export function restoreAnsweredIds(practice = {}, questions = []) {
+  const total = Number(practice.answeredInRound) || 0;
+  const known = Array.isArray(practice.answeredIds) ? practice.answeredIds.map((item) => String(item)) : [];
+  if (total <= 0 || known.length >= total) return known;
+
+  const recent = (questions || [])
+    .filter((question) => question.review?.lastAnsweredAt)
+    .sort((a, b) => (Date.parse(b.review.lastAnsweredAt) || 0) - (Date.parse(a.review.lastAnsweredAt) || 0))
+    .slice(0, total)
+    .map((question) => question.id);
+  return [...new Set([...known, ...recent])];
+}
+
 export function updateQuestionReview(question, { correct, selectedAnswers, answeredAt = new Date().toISOString() }) {
   const review = normalizeReviewState(question.review);
   review.lastAnsweredAt = answeredAt;

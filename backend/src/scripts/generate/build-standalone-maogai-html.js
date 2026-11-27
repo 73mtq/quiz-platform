@@ -1637,6 +1637,7 @@ function clientApp() {
         question.bookmarked = Boolean(patch.bookmarked);
         question.review = normalizeReviewState(patch.review);
       }
+      course.practice.answeredIds = restoreAnsweredIds(course.practice, course.questions);
     }
     return state;
   }
@@ -1889,7 +1890,10 @@ function clientApp() {
 
     const answered = Number(practice.answeredInRound) || 0;
     const remaining = Array.isArray(practice.remainingIds) ? practice.remainingIds.length : 0;
-    const currentSubmitted = practice.lastAnswer?.questionId && practice.lastAnswer.questionId === practice.currentQuestionId;
+    const currentSubmitted = Boolean(practice.currentQuestionId) && (
+      practice.lastAnswer?.questionId === practice.currentQuestionId
+      || (Array.isArray(practice.answeredIds) && practice.answeredIds.includes(practice.currentQuestionId))
+    );
     const current = practice.currentQuestionId && !currentSubmitted ? 1 : 0;
     const derived = answered + remaining + current;
     if (derived > 0) return derived;
@@ -1918,6 +1922,20 @@ function clientApp() {
 
   function isQuestionAnsweredInRound(practice = {}, questionId) {
     return Boolean(questionId && Array.isArray(practice.answeredIds) && practice.answeredIds.includes(questionId));
+  }
+
+  /** 旧版轮次没有 answeredIds 时，用最近的答题时间补回本轮已答题目 */
+  function restoreAnsweredIds(practice = {}, questions = []) {
+    const total = Number(practice.answeredInRound) || 0;
+    const known = Array.isArray(practice.answeredIds) ? practice.answeredIds.map((item) => String(item)) : [];
+    if (total <= 0 || known.length >= total) return known;
+
+    const recent = (questions || [])
+      .filter((question) => question.review?.lastAnsweredAt)
+      .sort((a, b) => (Date.parse(b.review.lastAnsweredAt) || 0) - (Date.parse(a.review.lastAnsweredAt) || 0))
+      .slice(0, total)
+      .map((question) => question.id);
+    return [...new Set([...known, ...recent])];
   }
 
   /** 本轮已作答回顾：优先使用刚提交的反馈，否则用本轮保存的答案重建 */
