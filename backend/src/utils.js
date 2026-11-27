@@ -142,6 +142,20 @@ export function restoreAnsweredIds(practice = {}, questions = []) {
   return [...new Set([...known, ...recent])];
 }
 
+/** 旧版轮次没有 historyIds 时，用本轮已答题目按答题时间补回上一题历史 */
+export function restoreHistoryIds(practice = {}, questions = []) {
+  const history = Array.isArray(practice.historyIds) ? practice.historyIds.map((item) => String(item)) : [];
+  if (history.length) return history;
+
+  const answeredIds = new Set(restoreAnsweredIds(practice, questions));
+  if (!answeredIds.size) return history;
+  const currentId = practice.currentQuestionId ? String(practice.currentQuestionId) : "";
+  return (questions || [])
+    .filter((question) => answeredIds.has(question.id) && question.id !== currentId && question.review?.lastAnsweredAt)
+    .sort((a, b) => (Date.parse(a.review.lastAnsweredAt) || 0) - (Date.parse(b.review.lastAnsweredAt) || 0))
+    .map((question) => question.id);
+}
+
 export function updateQuestionReview(question, { correct, selectedAnswers, answeredAt = new Date().toISOString() }) {
   const review = normalizeReviewState(question.review);
   review.lastAnsweredAt = answeredAt;

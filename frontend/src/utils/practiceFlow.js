@@ -12,10 +12,12 @@ export function roundQuestionTotal(practice = {}, fallbackTotal = 0) {
   if (fixed > 0) return fixed;
 
   const answered = Number(practice.answeredInRound) || 0;
-  const remaining = Array.isArray(practice.remainingIds) ? practice.remainingIds.length : 0;
+  const answeredIds = new Set(Array.isArray(practice.answeredIds) ? practice.answeredIds : []);
+  const remaining = (Array.isArray(practice.remainingIds) ? practice.remainingIds : [])
+    .filter((id) => !answeredIds.has(id)).length;
   const currentSubmitted = Boolean(practice.currentQuestionId) && (
     practice.lastAnswer?.questionId === practice.currentQuestionId
-    || (Array.isArray(practice.answeredIds) && practice.answeredIds.includes(practice.currentQuestionId))
+    || answeredIds.has(practice.currentQuestionId)
   );
   const current = practice.currentQuestionId && !currentSubmitted ? 1 : 0;
   const derived = answered + remaining + current;

@@ -45,6 +45,8 @@ backend/test/              # node --test 自动发现
 | 恢复旧版数据 | `scripts/migrate/restore-quiz-data.js` | `npm run restore:db`，需要 `DATABASE_URL` |
 | 改 AI prompt/超时 | `AiRecognitionService.js:prompt()` + `config.js:mimoTimeoutMs` | 强制纯 JSON 输出，max_completion_tokens=4096 |
 | 改学习笔记 | `StudyNoteGenerator.js` | `buildStudyNotes` 生成、`applyStudyNotesToState` 批量写入 |
+| 批量补解析 | `routes.js:/api/study-notes/import` | 按题目 ID 写入 explanation / memoryTip，只改正文 |
+| 改旧版进度补全 | `utils.js:restoreAnsweredIds` / `restoreHistoryIds` | 按答题时间补本轮已答题目与上一题历史 |
 | 改端口/环境变量 | `config.js` | 全部走 `config.*`，不要在路由里 `process.env` |
 
 ## CODE MAP
@@ -66,6 +68,7 @@ backend/test/              # node --test 自动发现
 | `SqlQuizRepository._migrateLayout` | 旧单列 data 自动迁移，备份到 quiz_data_backups，失败回滚 |
 | `restoreSnapshot(pool)` | 恢复迁移快照，practice 与 stats 置空，schema_version 回到 1 |
 | `buildStudyNotes` / `applyStudyNotesToState` | 解析与速记生成 |
+| `restoreAnsweredIds` / `restoreHistoryIds` | 旧版轮次按答题时间补全已答题目与上一题历史 |
 | `sendJson` / `sendBody` | 响应发送；≥1 KB 且客户端支持 gzip 时压缩 |
 | `readBody(req, maxBytes)` | 默认 20 MB 上限；超限抛 413 |
 

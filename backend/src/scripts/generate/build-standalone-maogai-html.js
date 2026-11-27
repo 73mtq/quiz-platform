@@ -1638,6 +1638,7 @@ function clientApp() {
         question.review = normalizeReviewState(patch.review);
       }
       course.practice.answeredIds = restoreAnsweredIds(course.practice, course.questions);
+      course.practice.historyIds = restoreHistoryIds(course.practice, course.questions);
     }
     return state;
   }
@@ -1889,10 +1890,12 @@ function clientApp() {
     if (fixed > 0) return fixed;
 
     const answered = Number(practice.answeredInRound) || 0;
-    const remaining = Array.isArray(practice.remainingIds) ? practice.remainingIds.length : 0;
+    const answeredIds = new Set(Array.isArray(practice.answeredIds) ? practice.answeredIds : []);
+    const remaining = (Array.isArray(practice.remainingIds) ? practice.remainingIds : [])
+      .filter((id) => !answeredIds.has(id)).length;
     const currentSubmitted = Boolean(practice.currentQuestionId) && (
       practice.lastAnswer?.questionId === practice.currentQuestionId
-      || (Array.isArray(practice.answeredIds) && practice.answeredIds.includes(practice.currentQuestionId))
+      || answeredIds.has(practice.currentQuestionId)
     );
     const current = practice.currentQuestionId && !currentSubmitted ? 1 : 0;
     const derived = answered + remaining + current;
@@ -1936,6 +1939,20 @@ function clientApp() {
       .slice(0, total)
       .map((question) => question.id);
     return [...new Set([...known, ...recent])];
+  }
+
+  /** 旧版轮次没有 historyIds 时，用本轮已答题目按答题时间补回上一题历史 */
+  function restoreHistoryIds(practice = {}, questions = []) {
+    const history = Array.isArray(practice.historyIds) ? practice.historyIds.map((item) => String(item)) : [];
+    if (history.length) return history;
+
+    const answeredIds = new Set(restoreAnsweredIds(practice, questions));
+    if (!answeredIds.size) return history;
+    const currentId = practice.currentQuestionId ? String(practice.currentQuestionId) : "";
+    return (questions || [])
+      .filter((question) => answeredIds.has(question.id) && question.id !== currentId && question.review?.lastAnsweredAt)
+      .sort((a, b) => (Date.parse(a.review.lastAnsweredAt) || 0) - (Date.parse(b.review.lastAnsweredAt) || 0))
+      .map((question) => question.id);
   }
 
   /** 本轮已作答回顾：优先使用刚提交的反馈，否则用本轮保存的答案重建 */

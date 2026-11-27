@@ -16,6 +16,7 @@ import {
   normalizeQuestion,
   readBody,
   restoreAnsweredIds,
+  restoreHistoryIds,
   sendBody,
   sendJson,
   updateQuestionReview,
@@ -114,6 +115,35 @@ async function handleApi(req, res, url, repository, aiService) {
       return;
     }
 
+    if (req.method === "POST" && url.pathname === "/api/study-notes/import") {
+      const notes = Array.isArray(body.notes) ? body.notes : [];
+      if (!notes.length) throw httpError(400, "缺少解析数据");
+      let applied = 0;
+      let missing = 0;
+      const state = await repository.update((draft) => {
+        const questions = new Map();
+        for (const course of draft.courses || []) {
+          for (const question of course.questions || []) questions.set(question.id, question);
+        }
+        for (const note of notes) {
+          const question = questions.get(String(note?.questionId || ""));
+          if (!question) {
+            missing += 1;
+            continue;
+          }
+          if (typeof note.explanation === "string") question.explanation = note.explanation;
+          if (typeof note.memoryTip === "string") question.memoryTip = note.memoryTip;
+          applied += 1;
+        }
+        if (!applied) return false;
+      });
+      await sendJson(req, res, 200, {
+        revision: repository.getRevision(),
+        result: { applied, missing }
+      });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/courses") {
       const state = await repository.update((draft) => {
         const course = repository.createCourse(String(body.name || "").trim() || "新课程");
@@ -131,10 +161,7 @@ async function handleApi(req, res, url, repository, aiService) {
       const course = result.course
         ? {
           ...result.course,
-          practice: {
-            ...result.course.practice,
-            answeredIds: restoreAnsweredIds(result.course.practice, result.course.questions)
-          }
+          practice: repairPractice({ ...result.course.practice }, result.course.questions)
         }
         : null;
       await sendJson(req, res, 200, lightResponse
@@ -223,7 +250,7 @@ async function handleApi(req, res, url, repository, aiService) {
       let currentQuestion = null;
       const result = await repository.updatePractice(body.courseId || null, (view) => {
         const course = repository.getActiveCourse(view);
-        course.practice.answeredIds = restoreAnsweredIds(course.practice, course.questions);
+        repairPractice(course.practice, course.questions);
         const input = practiceInput(body, course.practice);
         const modeChanged = input.mode !== course.practice.mode;
         applyPracticeConfig(course, input);
@@ -265,7 +292,7 @@ async function handleApi(req, res, url, repository, aiService) {
           if (!question) throw httpError(404, "题目不存在");
           const practice = course.practice;
 
-          practice.answeredIds = restoreAnsweredIds(practice, course.questions);
+          repairPractice(practice, course.questions);
           if (practice.answeredIds.includes(question.id)) {
             answerResult = {
               accepted: false,
@@ -367,7 +394,7 @@ async function handleApi(req, res, url, repository, aiService) {
       let summary = null;
       const result = await repository.updatePractice(body.courseId || null, (view) => {
         const course = repository.getActiveCourse(view);
-        course.practice.answeredIds = restoreAnsweredIds(course.practice, course.questions);
+        repairPractice(course.practice, course.questions);
         summary = finishExam(course, { timedOut: Boolean(body.timedOut) });
       }, { operationId: body.operationId || "", needStats: true });
       if (!result) throw httpError(404, "课程不存在");
@@ -383,7 +410,7 @@ async function handleApi(req, res, url, repository, aiService) {
       const result = await repository.updatePractice(body.courseId || null, (view) => {
         const course = repository.getActiveCourse(view);
         const practice = course.practice;
-        practice.answeredIds = restoreAnsweredIds(practice, course.questions);
+        repairPractice(practice, course.questions);
         if (!practice.historyIds.length) return false;
         const previousId = practice.historyIds.pop();
         if (practice.currentQuestionId) practice.remainingIds.unshift(practice.currentQuestionId);
@@ -771,6 +798,12 @@ function normalizeFingerprintText(value) {
     .replace(/[。．.]/g, "")
     .trim()
     .toLowerCase();
+}
+
+function repairPractice(practice, questions) {
+  practice.answeredIds = restoreAnsweredIds(practice, questions);
+  practice.historyIds = restoreHistoryIds(practice, questions);
+  return practice;
 }
 
 function findQuestion(course, questionId) {

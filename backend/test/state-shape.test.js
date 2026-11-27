@@ -142,6 +142,22 @@ test("compactStatePayload restores answered ids for legacy rounds", () => {
   assert.deepEqual(practice.answeredIds, []);
 });
 
+test("compactStatePayload restores previous question history for legacy rounds", () => {
+  const state = sampleState();
+  const practice = state.courses[0].practice;
+  practice.answeredIds = [];
+  practice.answeredInRound = 1;
+  practice.lastAnswer = null;
+  practice.historyIds = [];
+  practice.currentQuestionId = "q2";
+
+  const payload = compactStatePayload(state, 1);
+
+  assert.deepEqual(payload.course.practice.answeredIds, ["q1"]);
+  assert.deepEqual(payload.course.practice.historyIds, ["q1"]);
+  assert.deepEqual(practice.historyIds, []);
+});
+
 test("compactStatePayload contains only the active course questions", () => {
   const state = sampleState();
   const payload = compactStatePayload(state, 12);

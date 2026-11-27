@@ -35,6 +35,20 @@ test("previous question does not grow the round total", () => {
   assert.equal(after, 10);
 });
 
+test("answered questions in remaining ids do not inflate the round total", () => {
+  const practice = {
+    roundTotal: 0,
+    answeredInRound: 8,
+    correctInRound: 4,
+    remainingIds: ["answered-a", "unanswered-b"],
+    currentQuestionId: "answered-c",
+    lastAnswer: null,
+    answeredIds: ["answered-a", "answered-c"]
+  };
+
+  assert.equal(roundQuestionTotal(practice, 10), 9);
+});
+
 test("answeredIds blocks a repeated count", () => {
   assert.equal(isQuestionAnsweredInRound({ answeredIds: ["q1"] }, "q1"), true);
   assert.equal(isQuestionAnsweredInRound({ answeredIds: ["q1"] }, "q2"), false);

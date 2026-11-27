@@ -3,6 +3,7 @@ import {
   normalizeQuestion,
   normalizeReviewState,
   restoreAnsweredIds,
+  restoreHistoryIds,
   validateQuestion
 } from "../utils.js";
 
@@ -219,11 +220,12 @@ export function compactCoursePayload(course, revision = 0) {
 function withRestoredAnsweredIds(course) {
   const practice = course.practice || {};
   const answeredIds = restoreAnsweredIds(practice, course.questions || []);
+  const repaired = { ...practice, answeredIds };
   return {
     ...course,
     practice: {
-      ...practice,
-      answeredIds
+      ...repaired,
+      historyIds: restoreHistoryIds(repaired, course.questions || [])
     }
   };
 }

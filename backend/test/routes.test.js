@@ -654,6 +654,27 @@ test("courses can be added and deleted, last course is kept", async () => {
   });
 });
 
+test("study notes import applies explanations without touching progress", async () => {
+  const state = createState();
+  state.courses[0].practice.currentQuestionId = "unanswered";
+  const before = JSON.parse(JSON.stringify(state.courses[0].practice));
+
+  await withServer(state, async (request, repository) => {
+    const payload = await request("/api/study-notes/import", {
+      notes: [
+        { questionId: "unanswered", explanation: "导入解析", memoryTip: "导入速记" },
+        { questionId: "missing", explanation: "不应写入" }
+      ]
+    });
+
+    assert.deepEqual(payload.result, { applied: 1, missing: 1 });
+    const question = repository.state.courses[0].questions.find((item) => item.id === "unanswered");
+    assert.equal(question.explanation, "导入解析");
+    assert.equal(question.memoryTip, "导入速记");
+    assert.deepEqual(repository.state.courses[0].practice, before);
+  });
+});
+
 test("study notes generation fills explanation and memory tip", async () => {
   await withServer(createState(), async (request, repository, baseUrl) => {
     const result = await request("/api/study-notes/generate", {});
@@ -838,6 +859,36 @@ test("legacy rounds restore answered ids from review timestamps", async () => {
     const next = await request("/api/practice/next", { mode: "all" });
     assert.deepEqual(next.practice.answeredIds, ["unanswered"]);
     assert.equal(next.practice.answeredInRound, 1);
+  });
+});
+
+test("legacy rounds can step back through answered questions", async () => {
+  const state = createState();
+  const course = state.courses[0];
+  const practice = course.practice;
+  practice.answeredInRound = 2;
+  practice.answeredIds = [];
+  practice.historyIds = [];
+  practice.lastAnswer = null;
+  practice.currentQuestionId = "unanswered";
+  practice.remainingIds = ["bookmarked"];
+  practice.roundTotal = 4;
+  course.questions.find((question) => question.id === "wrong-only").review = {
+    lastAnsweredAt: "2026-01-02T00:00:00.000Z",
+    lastSelectedAnswers: ["Alpha"]
+  };
+  course.questions.find((question) => question.id === "wrong-then-correct").review = {
+    lastAnsweredAt: "2026-01-03T00:00:00.000Z",
+    lastSelectedAnswers: ["Alpha"]
+  };
+
+  await withServer(state, async (request) => {
+    const first = await request("/api/practice/prev", {});
+    assert.equal(first.practice.currentQuestionId, "wrong-then-correct");
+    assert.deepEqual(first.practice.answeredIds, ["wrong-then-correct", "wrong-only"]);
+
+    const second = await request("/api/practice/prev", {});
+    assert.equal(second.practice.currentQuestionId, "wrong-only");
   });
 });
 
